@@ -2,13 +2,15 @@ use dpdu_api_types::PduError;
 
 mod detours;
 mod vxdiag;
+mod softing;
 
 pub fn wrap_pdu_call<F>(func: &str, mut f: F) -> PduError
 where
     F: FnMut() -> PduError,
 {
-    create_detours();
-    register_callbacks();
+    register_detours();
+    register_detour_callbacks();
+    do_miscellaneous();
 
     let result = f();
 
@@ -39,10 +41,14 @@ where
     result
 }
 
-fn create_detours() {
+fn register_detours() {
     detours::msg_box_a::hook_message_box_a();
 }
 
-fn register_callbacks() {
+fn register_detour_callbacks() {
     vxdiag::register_callback();
+}
+
+fn do_miscellaneous() {
+    softing::restore_protocol_dll();
 }

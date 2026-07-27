@@ -8,13 +8,19 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum PduModuleDescriptionError {
     #[error("io error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(String),
 
     #[error("xml parser error: {0}")]
     XmlParseError(#[from] quick_xml::de::DeError),
+}
+
+impl From<std::io::Error> for PduModuleDescriptionError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IoError(value.to_string())
+    }
 }
 
 #[derive(Debug)]

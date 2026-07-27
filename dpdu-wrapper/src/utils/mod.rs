@@ -1,5 +1,6 @@
 pub mod module_description;
 pub mod root_file;
+pub mod can;
 
 use crate::types::PduUniqueRespIdentifier;
 use rand::RngExt;
@@ -12,6 +13,9 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::ptr;
 use std::ptr::NonNull;
+use cfg_if::cfg_if;
+use winreg::enums::HKEY_LOCAL_MACHINE;
+use winreg::RegKey;
 
 /// Converts a nullable C string to `Option<String>`.
 ///
@@ -169,5 +173,50 @@ pub fn take_slice_ptr<T>(slice: &[T]) -> *mut T {
         ptr::null_mut()
     } else {
         slice.as_ptr() as _
+    }
+}
+
+/// Wrapper that prevents cloning of the contained value.
+///
+/// The inner value can be extracted or accessed, but `NonClonable<T>` itself
+/// does not implement [`Clone`], even if `T` does.
+#[derive(Debug)]
+pub struct NonClonable<T>(pub(crate) T);
+
+impl<T> NonClonable<T> {
+    /// Creates a new non-clonable wrapper.
+    pub const fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    /// Returns the wrapped value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+
+    /// Returns a shared reference to the wrapped value.
+    pub const fn get_ref(&self) -> &T {
+        &self.0
+    }
+
+    /// Returns a mutable reference to the wrapped value.
+    pub fn get_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+pub const HKEY_LM_REG_KEY: RegKey = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+pub const fn get_winreg_arch_flags() -> u32 {
+    use winreg::enums;
+
+    cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            enums::KEY_READ
+        } else if #[cfg(target_arch = "x86")] {
+            enums::KEY_READ | enums::KEY_WOW64_32KEY
+        } else {
+            compile_error!("Unsupported target architecture");
+        }
     }
 }

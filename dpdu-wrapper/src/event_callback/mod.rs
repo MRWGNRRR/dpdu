@@ -75,10 +75,10 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
                     continue;
                 };
 
-                if let Err(err) = api_event_tx.try_send(event) {
-                    warn!(
+                if api_event_tx.send(event).is_err() {
+                    error!(
                         h_mod,
-                        "PDUEventCallback: unable to deliver event to the PduApi: {err}"
+                        "PDUEventCallback: unable to send D-PDU event to the PduApi"
                     );
                 }
             }
@@ -94,14 +94,14 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
                     continue;
                 };
 
-                if let Err(err) = module_event_tx.try_send(event) {
-                    warn!(
+                if module_event_tx.send(event).is_err() {
+                    error!(
                         h_mod,
-                        "PDUEventCallback: unable to deliver event to the PduVci: {err}"
+                        "PDUEventCallback: unable to send D-PDU event to the PduVci"
                     );
                 }
             }
-            PduEventTarget::LogicalLink(_h_mod, h_cll) => {
+            PduEventTarget::LogicalLink(h_mod, h_cll) => {
                 let Some(cll_tag) = PduUniqueCllTag::new(p_cll_tag as _) else {
                     warn!(
                         "PDUEventCallback: abnormally CLL creation: cll_tag is required when PduEventTarget = ComLogicalLink"
@@ -112,14 +112,19 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
                 if let Some(h_cop) = event.h_cop {
                     // ComPrimitive event.
                     let Some(cop_tag) = event.cop_tag else {
-                        warn!(h_cop, "PDUEventCallback: API does not provide a COP tag");
+                        warn!(h_cop, "PDUEventCallback: API does not provide a primitive tag");
                         continue;
                     };
 
                     let Some(cop_event_tx) =
                         PduHandleManager::lookup_cop_event_tx(api.get_unique_tag(), cop_tag)
                     else {
-                        warn!(
+                        // I'm decreasing log level because the ComPrimitive handle can
+                        // be destroyed, which will give difficult triggers.
+                        //
+                        // This may not be the best solution and I should have a list of deleted
+                        // ComPrimitives, but I'll leave it that way.
+                        debug!(
                             h_cll,
                             tag = cll_tag,
                             "PDUEventCallback: unable to lookup event_tx for the PduComPrimitive"
@@ -127,10 +132,12 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
                         continue;
                     };
 
-                    if let Err(err) = cop_event_tx.try_send(event) {
-                        warn!(
+                    if cop_event_tx.send(event).is_err() {
+                        error!(
+                            h_mod,
+                            h_cll,
                             h_cop,
-                            "PDUEventCallback: unable to deliver event to the PduComPrimitive: {err}"
+                            "PDUEventCallback: unable to send D-PDU event to the PduComPrimitive"
                         );
                     }
                 } else {
@@ -146,16 +153,16 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
                         debug!(
                             h_cll,
                             tag = cll_tag,
-                            "PDUEventCallback: unable to lookup event_tx for the PduComLogicalLink"
+                            "PDUEventCallback: unable to lookup event_tx for the PduLogicalLink"
                         );
                         continue;
                     };
 
-                    if let Err(err) = cll_event_tx.try_send(event) {
-                        warn!(
+                    if cll_event_tx.send(event).is_err() {
+                        error!(
+                            h_mod,
                             h_cll,
-                            tag = cll_tag,
-                            "PDUEventCallback: unable to deliver event to the PduComLogicalLink: {err}"
+                            "PDUEventCallback: unable to send D-PDU event to the PduLogicalLink"
                         );
                     }
                 }

@@ -5,24 +5,26 @@ use crate::error::GeneralResult;
 use crate::event_callback::event_callback;
 use crate::handle_manager::PduHandleManager;
 use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, PduLogicalLink};
-use crate::types::pdu_event::{PduEvent, PduEventTarget};
+use crate::types::pdu_event::{PduEvent, PduEventTarget, StopReceive};
 use crate::types::pdu_module::PduModuleData;
 use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
 use crate::types::{PduModuleHandle, PduUniqueCllTag};
-use crate::utils::random_non_zero_usize;
+use crate::utils::{random_non_zero_usize, NonClonable};
 use crate::worker::{PduAsyncWorker, Query};
 use dpdu_api_types::PduStatus;
 use parking_lot::Mutex;
 use regex::Regex;
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, OnceLock, Weak};
-use tokio::sync::mpsc;
+use std::thread::spawn;
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
 use tracing::{debug, error};
+use crate::types::pdu_com_primitive::PduPrimitive;
 
 pub type VciList = Vec<Arc<PduVci>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PduVci {
     pub(crate) me: Weak<PduVci>,
 
@@ -32,11 +34,36 @@ pub struct PduVci {
 
     pub(crate) module_data: PduModuleData,
 
-    pub(crate) event_tx: Arc<mpsc::Sender<PduEvent>>,
+    /// Event channel sender owned by [`PduVci`].
+    ///
+    /// The sender is intentionally dropped when [`PduVci`] is dropped,
+    /// allowing the event listener to detect shutdown.
+    ///
+    /// A weak reference is stored in [`PduHandleManager`] to keep track of the
+    /// channel lifetime and to automatically stop event listening in
+    /// [`PduVci::listen_events`] and
+    /// [`PduVci::blocking_listen_events`].
+    ///
+    /// # Safety
+    ///
+    /// This sender must not be cloned. Cloning it would extend the channel
+    /// lifetime beyond [`PduVci`] and prevent listeners from being
+    /// automatically stopped.
+    ///
+    /// [`PduHandleManager`]: crate::handle_manager::PduHandleManager
+    pub(crate) pdu_event_tx: NonClonable<mpsc::UnboundedSender<PduEvent>>,
 
-    pub(crate) event_rx: Arc<mpsc::Receiver<PduEvent>>,
+    /// Sender used to create additional receivers after the initial receiver
+    /// has been taken.
+    pub(crate) module_event_tx: broadcast::Sender<()>,
 
-    pub(crate) sync: Arc<Mutex<()>>,
+    /// The initial receiver returned by the first [`get_vci_event_receiver`] call.
+    ///
+    /// After the receiver is taken, subsequent calls create new receivers from
+    /// [`module_event_tx`].
+    pub(crate) module_event_rx: Mutex<Option<broadcast::Receiver<()>>>,
+
+    pub(crate) pdu_sync: Mutex<()>,
 }
 
 impl PduVci {
@@ -92,7 +119,7 @@ impl PduVci {
     }
 
     pub fn blocking_get_status(&self) -> GeneralResult<VciStatus> {
-        let _sync_guard = self.sync.lock();
+        let _sync_guard = self.pdu_sync.lock();
         let target = PduStatusTarget::Module(self.module_data.h_mod);
         let result = self.api.pdu_get_status(&target)?;
         Ok(VciStatus(result))
@@ -121,7 +148,7 @@ impl PduVci {
             return Ok(false);
         }
 
-        let _sync_guard = self.sync.lock();
+        let _sync_guard = self.pdu_sync.lock();
         self.api.pdu_module_connect(self.module_data.h_mod)?;
         Ok(true)
     }
@@ -152,7 +179,7 @@ impl PduVci {
             return Ok(false);
         }
 
-        let _sync_guard = self.sync.lock();
+        let _sync_guard = self.pdu_sync.lock();
         self.api
             .pdu_module_disconnect(Some(self.module_data.h_mod))?;
         Ok(true)
@@ -192,17 +219,27 @@ impl PduVci {
         let mut list = Vec::with_capacity(modules.len());
 
         for module in modules.iter() {
-            let (tx, rx) = mpsc::channel(events_queue_size);
-            let tx = Arc::new(tx);
+            let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
+
+            let (module_event_tx, module_event_rx) = broadcast::channel(events_queue_size);
+
+            // This thread is necessary for receiving events from the D-PDU API via the built-in
+            // event callback mechanism, in order to generate the high-level events that
+            // are actually required when using PduVci.
+            spawn({
+                let module_event_tx = module_event_tx.clone();
+                move || PduVci::blocking_listen_events(pdu_event_rx, module_event_tx)
+            });
 
             let vci = Arc::new_cyclic(|weak| PduVci {
                 me: weak.clone(),
                 api: api.clone(),
                 worker: OnceLock::default(),
                 module_data: module.clone(),
-                event_tx: tx.clone(),
-                event_rx: Arc::new(rx),
-                sync: Arc::default(),
+                pdu_event_tx: NonClonable(pdu_event_tx.clone()),
+                module_event_tx,
+                module_event_rx: Mutex::new(Some(module_event_rx)),
+                pdu_sync: Mutex::default(),
             });
 
             /* TODO: Register after connect
@@ -222,7 +259,7 @@ impl PduVci {
             PduHandleManager::register_module(
                 api.unique_tag,
                 module.h_mod,
-                Arc::downgrade(&tx),
+                pdu_event_tx.downgrade(),
                 Arc::downgrade(&vci),
             );
 
@@ -255,17 +292,27 @@ impl PduVci {
                 let mut list = Vec::with_capacity(modules.len());
 
                 for module in modules.iter() {
-                    let (tx, rx) = mpsc::channel(events_queue_size);
-                    let tx = Arc::new(tx);
+                    let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
+
+                    let (module_event_tx, module_event_rx) = broadcast::channel(events_queue_size);
+
+                    // This task is necessary for receiving events from the D-PDU API via the built-in
+                    // event callback mechanism, in order to generate the high-level events that
+                    // are actually required when using PduVci.
+                    tokio::spawn({
+                        let module_event_tx = module_event_tx.clone();
+                        PduVci::listen_events(pdu_event_rx, module_event_tx)
+                    });
 
                     let vci = Arc::new_cyclic(|weak| PduVci {
                         me: weak.clone(),
                         api: worker.api.clone(),
-                        worker: OnceLock::from(worker.clone_arc()),
+                        worker: OnceLock::default(),
                         module_data: module.clone(),
-                        event_tx: tx.clone(),
-                        event_rx: Arc::new(rx),
-                        sync: Arc::default(),
+                        pdu_event_tx: NonClonable(pdu_event_tx),
+                        module_event_tx,
+                        module_event_rx: Mutex::new(Some(module_event_rx)),
+                        pdu_sync: Mutex::default(),
                     });
 
                     /* TODO: Register after connect
@@ -285,7 +332,7 @@ impl PduVci {
                     PduHandleManager::register_module(
                         worker.api.unique_tag,
                         module.h_mod,
-                        Arc::downgrade(&tx),
+                        vci.pdu_event_tx.get_ref().downgrade(),
                         Arc::downgrade(&vci),
                     );
 
@@ -303,18 +350,28 @@ impl PduVci {
         create_flags: &CllCreateFlags,
         events_queue_size: Option<usize>,
     ) -> GeneralResult<Arc<PduLogicalLink>> {
-        let _sync_guard = self.sync.lock();
+        let _sync_guard = self.pdu_sync.lock();
 
         let events_queue_size = events_queue_size.unwrap_or(CLL_EVENTS_QUEUE_SIZE);
         let unique_tag: PduUniqueCllTag = random_non_zero_usize();
-        let (tx, rx) = mpsc::channel(events_queue_size);
-        let tx = Arc::new(tx);
+
+        let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
+
+        let (logical_link_event_tx, logical_link_event_rx) = broadcast::channel(events_queue_size);
+
+        // This thread is necessary for receiving events from the D-PDU API via the built-in
+        // event callback mechanism, in order to generate the high-level events that
+        // are actually required when using PduLogicalLink.
+        spawn({
+            let logical_link_event_tx = logical_link_event_tx.clone();
+            move || PduLogicalLink::blocking_listen_events(pdu_event_rx, logical_link_event_tx)
+        });
 
         // Register event tx for unique tag.
         PduHandleManager::register_cll(
             self.api.unique_tag,
             unique_tag,
-            Some(Arc::downgrade(&tx)),
+            Some(pdu_event_tx.downgrade()),
             None,
         );
 
@@ -343,9 +400,10 @@ impl PduVci {
             worker: OnceLock::default(),
             unique_tag,
             cll_data: cll_data.into(),
-            event_tx: tx,
-            event_rx: Arc::new(rx),
-            sync: Arc::default(),
+            pdu_event_tx: NonClonable(pdu_event_tx),
+            logical_link_event_tx,
+            logical_link_event_rx: Mutex::new(Some(logical_link_event_rx)),
+            sync: Mutex::default(),
         });
 
         // Register cll reference for unique tag.
@@ -369,14 +427,24 @@ impl PduVci {
         match self.worker.get() {
             Some(worker) => {
                 let unique_tag: PduUniqueCllTag = random_non_zero_usize();
-                let (tx, rx) = mpsc::channel(events_queue_size);
-                let tx = Arc::new(tx);
+
+                let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
+
+                let (logical_link_event_tx, logical_link_event_rx) = broadcast::channel(events_queue_size);
+
+                // This task is necessary for receiving events from the D-PDU API via the built-in
+                // event callback mechanism, in order to generate the high-level events that
+                // are actually required when using PduLogicalLink.
+                tokio::spawn({
+                    let logical_link_event_tx = logical_link_event_tx.clone();
+                    PduLogicalLink::listen_events(pdu_event_rx, logical_link_event_tx)
+                });
 
                 // Register event tx for unique tag.
                 PduHandleManager::register_cll(
                     self.api.unique_tag,
                     unique_tag,
-                    Some(Arc::downgrade(&tx)),
+                    Some(pdu_event_tx.downgrade()),
                     None,
                 );
 
@@ -406,10 +474,11 @@ impl PduVci {
                     api: self.api.clone(),
                     worker: OnceLock::from(worker.clone()),
                     unique_tag,
-                    cll_data: Arc::new(cll_data),
-                    event_tx: tx,
-                    event_rx: Arc::new(rx),
-                    sync: Arc::default(),
+                    cll_data,
+                    pdu_event_tx: NonClonable(pdu_event_tx),
+                    logical_link_event_tx,
+                    logical_link_event_rx: Mutex::new(Some(logical_link_event_rx)),
+                    sync: Mutex::default(),
                 });
 
                 // Register cll reference for unique tag.
@@ -445,7 +514,51 @@ impl PduVci {
         }
     }
 
-    // TODO : fast req res
+    pub(crate) fn blocking_listen_events(
+        mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
+        mut module_event_tx: broadcast::Sender<()>,
+    ) {
+        loop {
+            let event = match pdu_event_rx.blocking_recv() {
+                Some(value) => value,
+                None => {
+                    // The channel will be closed when `drop()` is called for the `PduVci`.
+                    break;
+                }
+            };
+
+            if Self::handle_event(event, &mut module_event_tx) {
+                break;
+            }
+        }
+    }
+
+    pub(crate) async fn listen_events(
+        mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
+        mut module_event_tx: broadcast::Sender<()>,
+    ) {
+        loop {
+            let event = match pdu_event_rx.recv().await {
+                Some(value) => value,
+                None => {
+                    // The channel will be closed when `drop()` is called for the `PduVci`.
+                    break;
+                }
+            };
+
+            if Self::handle_event(event, &mut module_event_tx) {
+                break;
+            }
+        }
+    }
+
+    pub(crate) fn handle_event(
+        event: PduEvent,
+        module_event_tx: &mut broadcast::Sender<()>
+    ) -> StopReceive {
+        // TODO
+        false
+    }
 }
 
 impl Drop for PduVci {
@@ -471,7 +584,7 @@ impl Drop for PduVci {
             None => {
                 let api = self.api.clone();
                 let h_mod = self.get_module_handle();
-                std::thread::spawn(move || api.vt_module_destructor(h_mod));
+                spawn(move || api.vt_module_destructor(h_mod));
             }
         }
     }

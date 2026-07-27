@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
 static MGR: LazyLock<Arc<PduHandleManager>> = LazyLock::new(|| PduHandleManager::new());
@@ -68,8 +68,8 @@ impl PduHandleManager {
 
         me
     }
-
-    pub(crate) fn register_api(api: &Arc<PduApi>, tx: Weak<mpsc::Sender<PduEvent>>) {
+    
+    pub(crate) fn register_api(api: &Arc<PduApi>, tx: mpsc::WeakUnboundedSender<PduEvent>) {
         let mut apis = MGR.apis.write();
         apis.insert(
             api.unique_tag,
@@ -91,9 +91,9 @@ impl PduHandleManager {
 
     pub(crate) fn lookup_api_event_tx(
         unique_id: PduUniqueApiTag,
-    ) -> Option<Arc<mpsc::Sender<PduEvent>>> {
+    ) -> Option<mpsc::UnboundedSender<PduEvent>> {
         let apis = MGR.apis.read();
-        apis.get(&unique_id)?.event_tx.get().and_then(Weak::upgrade)
+        apis.get(&unique_id)?.event_tx.get().and_then(mpsc::WeakUnboundedSender::upgrade)
     }
 
     /// Returns the only one D-PDU API that is registered.
@@ -113,19 +113,28 @@ impl PduHandleManager {
     pub(crate) fn register_module(
         api_tag: PduUniqueApiTag,
         h_mod: PduModuleHandle,
-        tx: Weak<mpsc::Sender<PduEvent>>,
+        event_tx: mpsc::WeakUnboundedSender<PduEvent>,
         vci: Weak<PduVci>,
     ) {
         let mut mods = MGR.mods.write();
-        let module = mods.entry((api_tag, h_mod)).or_insert(HandleContainer {
-            reference: OnceLock::from(vci.clone()),
-            event_tx: OnceLock::from(tx.clone()),
-            created_at: Instant::now(),
-        });
 
-        // Because the module IDs are not random.
-        module.event_tx = OnceLock::from(tx);
-        module.reference = OnceLock::from(vci);
+        let module = mods
+            .entry((api_tag, h_mod))
+            .or_insert(HandleContainer {
+                reference: Default::default(),
+                event_tx: Default::default(),
+                created_at: Instant::now(),
+            });
+
+        module
+            .reference
+            .set(vci)
+            .expect(&format!("internal error: reference already registered for module handle {h_mod}"));
+
+        module
+            .event_tx
+            .set(event_tx)
+            .expect(&format!("internal error: event_tx already register for module handle {h_mod}"));
     }
 
     pub(crate) fn lookup_module_reference(
@@ -142,27 +151,29 @@ impl PduHandleManager {
     pub(crate) fn lookup_module_event_tx(
         api_tag: PduUniqueApiTag,
         h_mod: PduModuleHandle,
-    ) -> Option<Arc<mpsc::Sender<PduEvent>>> {
+    ) -> Option<mpsc::UnboundedSender<PduEvent>> {
         let mods = MGR.mods.read();
         mods.get(&(api_tag, h_mod))?
             .event_tx
             .get()
-            .and_then(Weak::upgrade)
+            .and_then(mpsc::WeakUnboundedSender::upgrade)
     }
 
     pub(crate) fn register_cll(
         api_tag: PduUniqueApiTag,
         cll_tag: PduUniqueCllTag,
-        tx: Option<Weak<mpsc::Sender<PduEvent>>>,
+        tx: Option<mpsc::WeakUnboundedSender<PduEvent>>,
         cll: Option<Weak<PduLogicalLink>>,
     ) {
         let mut clls = MGR.clls.write();
 
-        let container = clls.entry((api_tag, cll_tag)).or_insert(HandleContainer {
-            reference: Default::default(),
-            event_tx: Default::default(),
-            created_at: Instant::now(),
-        });
+        let container = clls
+            .entry((api_tag, cll_tag))
+            .or_insert(HandleContainer {
+                reference: Default::default(),
+                event_tx: Default::default(),
+                created_at: Instant::now(),
+            });
 
         if let Some(tx) = tx {
             container.event_tx.set(tx).expect(&format!(
@@ -191,18 +202,18 @@ impl PduHandleManager {
     pub(crate) fn lookup_cll_event_tx(
         api_tag: PduUniqueApiTag,
         cll_tag: PduUniqueCllTag,
-    ) -> Option<Arc<mpsc::Sender<PduEvent>>> {
+    ) -> Option<mpsc::UnboundedSender<PduEvent>> {
         let clls = MGR.clls.read();
         clls.get(&(api_tag, cll_tag))?
             .event_tx
             .get()
-            .and_then(Weak::upgrade)
+            .and_then(mpsc::WeakUnboundedSender::upgrade)
     }
 
     pub(crate) fn register_cop(
         api_tag: PduUniqueApiTag,
         cop_tag: PduUniqueCopTag,
-        tx: Option<Weak<mpsc::Sender<PduEvent>>>,
+        tx: Option<mpsc::WeakUnboundedSender<PduEvent>>,
         cop: Option<Weak<PduPrimitive>>,
     ) {
         let mut cops = MGR.cops.write();
@@ -240,18 +251,20 @@ impl PduHandleManager {
     pub(crate) fn lookup_cop_event_tx(
         api_tag: PduUniqueApiTag,
         cop_tag: PduUniqueCopTag,
-    ) -> Option<Arc<mpsc::Sender<PduEvent>>> {
+    ) -> Option<mpsc::UnboundedSender<PduEvent>> {
         let cops = MGR.cops.read();
         cops.get(&(api_tag, cop_tag))?
             .event_tx
             .get()
-            .and_then(Weak::upgrade)
+            .and_then(mpsc::WeakUnboundedSender::upgrade)
     }
 
+    /// A function for clearing containers of outdated entities in the D-PDU API.
     fn retain_handle_containers<T>(now: &Instant, container: &mut HandleContainer<T>) -> bool {
-        const REFERENCE_TIMEOUT: LazyLock<Duration> = LazyLock::new(|| Duration::from_mins(1));
+        const REFERENCE_TIMEOUT: Duration = Duration::from_secs(10);
+
         container
-            .reference
+            .event_tx
             .get()
             .map(|weak| weak.strong_count() > 0)
             .unwrap_or_else(|| {
@@ -259,19 +272,21 @@ impl PduHandleManager {
                 // reference during which the weak reference doesn't exist yet. We must ensure that
                 // the reference has been registered within the allotted time before considering
                 // the HandleContainer invalid.
-                &now.duration_since(container.created_at) > REFERENCE_TIMEOUT.deref()
+                now.duration_since(container.created_at) <= REFERENCE_TIMEOUT
             })
     }
 
     /// Garbage collector thread.
     fn thread(me: Arc<PduHandleManager>) {
+        let need_shrink = |cap: usize, len: usize| cap > (len * 2);
+
         loop {
             let now = Instant::now();
 
             {
                 let mut apis = me.apis.write();
                 apis.retain(|_, handle| Self::retain_handle_containers(&now, handle));
-                if apis.capacity() > apis.len() * 2 {
+                if need_shrink(apis.capacity(), apis.len()) {
                     // Release resources back to the system.
                     apis.shrink_to_fit();
                 }
@@ -279,7 +294,7 @@ impl PduHandleManager {
             {
                 let mut mods = me.mods.write();
                 mods.retain(|_, handle| Self::retain_handle_containers(&now, handle));
-                if mods.capacity() > mods.len() * 2 {
+                if need_shrink(mods.capacity(), mods.len()) {
                     // Release resources back to the system.
                     mods.shrink_to_fit();
                 }
@@ -287,7 +302,7 @@ impl PduHandleManager {
             {
                 let mut clls = me.clls.write();
                 clls.retain(|_, handle| Self::retain_handle_containers(&now, handle));
-                if clls.capacity() > clls.len() * 2 {
+                if need_shrink(clls.capacity(), clls.len()) {
                     // Release resources back to the system.
                     clls.shrink_to_fit();
                 }
@@ -295,7 +310,7 @@ impl PduHandleManager {
             {
                 let mut cops = me.cops.write();
                 cops.retain(|_, handle| Self::retain_handle_containers(&now, handle));
-                if cops.capacity() > cops.len() * 2 {
+                if need_shrink(cops.capacity(), cops.len()) {
                     // Release resources back to the system.
                     cops.shrink_to_fit();
                 }
@@ -306,9 +321,16 @@ impl PduHandleManager {
     }
 }
 
+/// Container for the module, logical link, and primitive.
+///
+/// I specifically separated T and its sender, since, for example, the creation and execution
+/// of primitives may happen before the primitive creation function returns PduPrimitive and
+/// begins routing events to its sender.
 #[derive(Debug)]
 pub(crate) struct HandleContainer<T> {
     reference: OnceLock<Weak<T>>,
-    event_tx: OnceLock<Weak<mpsc::Sender<PduEvent>>>,
+    
+    event_tx: OnceLock<mpsc::WeakUnboundedSender<PduEvent>>,
+
     created_at: Instant,
 }

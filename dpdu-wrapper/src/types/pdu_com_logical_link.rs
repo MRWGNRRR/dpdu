@@ -3,30 +3,29 @@ use crate::constants::COP_EVENTS_QUEUE_SIZE;
 use crate::error::{GeneralError, GeneralResult};
 use crate::handle_manager::PduHandleManager;
 use crate::types::pdu_com_param::table::{IntoPduComParam, MapTarget, PduComParamTable, SetTarget};
-use crate::types::pdu_com_primitive::{
-    ComParamBuffer, ExpectedResponse, PduPrimitive, PduPrimitiveParams, ReceiveCycles,
-    ResponseType, SendCycles, TransmitFlags,
-};
-use crate::types::pdu_event::PduEvent;
+use crate::types::pdu_com_primitive::{ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PduPrimitiveParams, PrimitiveEvent, PrimitiveStatusStore, ReceiveCycles, ResponseType, SendCycles, TransmitFlags};
+use crate::types::pdu_event::{ErrorEventStore, PduEvent, PduEventData, StopReceive};
 use crate::types::pdu_resource::{BusSource, ProtocolSource, TargetPin};
 use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
 use crate::types::{PduCllHandle, PduModuleHandle, PduObjectId, PduUniqueCllTag, PduUniqueCopTag};
-use crate::utils::random_non_zero_usize;
+use crate::utils::{random_non_zero_usize, NonClonable};
 use crate::worker::{PduAsyncWorker, Query};
 use dpdu_api_types::{PduCopt, PduError, PduStatus};
-use parking_lot::Mutex as ParkingLotMutex;
+use parking_lot::{Mutex};
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, Once, OnceLock, Weak};
+use std::sync::atomic::AtomicBool;
 use std::thread::spawn;
 use std::time::Duration;
-use tokio::sync::Mutex as TokioMutex;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast::error::RecvError;
 use tokio::task::spawn_blocking;
 use tracing::{debug, error};
+use crate::utils::can::{CanFrame, RawCanPrimitiveBuilderExt};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PduLogicalLink {
     pub(crate) me: Weak<PduLogicalLink>,
 
@@ -36,13 +35,38 @@ pub struct PduLogicalLink {
 
     pub(crate) unique_tag: PduUniqueCllTag,
 
-    pub(crate) cll_data: Arc<PduCllData>,
+    pub(crate) cll_data: PduCllData,
 
-    pub(crate) event_tx: Arc<mpsc::Sender<PduEvent>>,
+    /// Event channel sender owned by [`PduLogicalLink`].
+    ///
+    /// The sender is intentionally dropped when [`PduLogicalLink`] is dropped,
+    /// allowing the event listener to detect shutdown.
+    ///
+    /// A weak reference is stored in [`PduHandleManager`] to keep track of the
+    /// channel lifetime and to automatically stop event listening in
+    /// [`PduLogicalLink::listen_events`] and
+    /// [`PduLogicalLink::blocking_listen_events`].
+    ///
+    /// # Safety
+    ///
+    /// This sender must not be cloned. Cloning it would extend the channel
+    /// lifetime beyond [`PduLogicalLink`] and prevent listeners from being
+    /// automatically stopped.
+    ///
+    /// [`PduHandleManager`]: crate::handle_manager::PduHandleManager
+    pub(crate) pdu_event_tx: NonClonable<mpsc::UnboundedSender<PduEvent>>,
 
-    pub(crate) event_rx: Arc<mpsc::Receiver<PduEvent>>,
+    /// Sender used to create additional receivers after the initial receiver
+    /// has been taken.
+    pub(crate) logical_link_event_tx: broadcast::Sender<()>,
 
-    pub(crate) sync: Arc<ParkingLotMutex<()>>,
+    /// The initial receiver returned by the first [`get_logical_link_event_receiver`] call.
+    ///
+    /// After the receiver is taken, subsequent calls create new receivers from
+    /// [`logical_link_event_tx`].
+    pub(crate) logical_link_event_rx: Mutex<Option<broadcast::Receiver<()>>>,
+
+    pub(crate) sync: Mutex<()>,
 }
 
 impl PduLogicalLink {
@@ -170,38 +194,78 @@ impl PduLogicalLink {
         }
     }
 
-    pub fn blocking_start_primitive(
+    pub fn create_primitive(
         &self,
-        cop_type: &PduCopt,
+        cop_type: PduCopt,
         data: &[u8],
         params: Option<&PduPrimitiveParams>,
         events_queue_size: Option<usize>,
-    ) -> GeneralResult<Arc<PduPrimitive>> {
-        let _sync_guard = self.sync.lock();
-
+    ) -> Arc<PduPrimitive> {
         let events_queue_size = events_queue_size.unwrap_or(COP_EVENTS_QUEUE_SIZE);
+
         let unique_tag: PduUniqueCopTag = random_non_zero_usize();
-        let (tx, rx) = mpsc::channel(events_queue_size);
-        let tx = Arc::new(tx);
+
+        // The transmitter of this channel will be sent to the PduHandlerManager so that
+        // the D-PDU API event handler can send events to this channel.
+        //
+        // The receiver will be used in an asynchronous event processing task from
+        // the D-PDU API via PduPrimitive::blocking_handle_events().
+        let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
+
+        // High-level event channel of the D-PDU API for PduPrimitive.
+        //
+        // When an event is received in an asynchronous event processing task via
+        // the PduPrimitive::blocking_handle_events(), it will be sent to the receiver of
+        // this channel, provided that the event type is Result.
+        //
+        // The receiver is used in the get_result_receiver() method of
+        // the PduPrimitive structure.
+        let (primitive_event_tx, primitive_event_rx) = broadcast::channel(events_queue_size);
+
+        // The flag of a dead primitive.
+        //
+        // It is set if:
+        //   - an Error event has been registered in the asynchronous event
+        //     processing task of the D-PDU API via the PduPrimitive::blocking_handle_event().
+        //   - a Result event with the type CopstFinished or CopstExecuting was received.
+        let primitive_dead_flag = Arc::new(Once::new());
+
+        // An "Error" event store for PduPrimitive.
+        //
+        // Used in an asynchronous event-handling task in the D-PDU API via
+        // the PduPrimitive::blocking_handle_event().
+        // And also in `PduPrimitive` when checking the primitive’s lifetime.
+        let primitive_error_store = ErrorEventStore::new();
+
+        let primitive_status_store = PrimitiveStatusStore::new();
 
         // Register event tx for unique tag.
         PduHandleManager::register_cop(
             self.api.unique_tag,
             unique_tag,
-            Some(Arc::downgrade(&tx)),
+            Some(pdu_event_tx.downgrade()),
             None,
         );
 
+        // This thread is necessary for receiving events from the D-PDU API via the built-in
+        // event callback mechanism, in order to generate the high-level events that
+        // are actually required when using PduPrimitive.
+        spawn({
+            let dead_flag = primitive_dead_flag.clone();
+            let error_store = primitive_error_store.clone();
+            let status_store = primitive_status_store.clone();
+            let primitive_event_tx = primitive_event_tx.clone();
+            move || PduPrimitive::blocking_listen_events(
+                pdu_event_rx,
+                primitive_event_tx,
+                error_store,
+                status_store,
+                dead_flag
+            )
+        });
+
         let h_mod = self.get_module_handle();
         let h_cll = self.get_cll_handle();
-        let cop_data = self.api.pdu_start_com_primitive(
-            h_mod,
-            h_cll,
-            cop_type.to_owned(),
-            data,
-            params,
-            Some(unique_tag),
-        )?;
 
         let cop = Arc::new_cyclic(|weak| PduPrimitive {
             me: weak.clone(),
@@ -210,13 +274,17 @@ impl PduLogicalLink {
             unique_tag,
             h_mod,
             h_cll,
-            cop_data,
+            h_cop: OnceLock::new(),
+            cop_type: cop_type.to_owned(),
+            data: data.to_vec(),
             params: params.cloned().into(),
-            event_tx: tx,
-            event_rx: Arc::new(TokioMutex::new(rx)),
-            dead: Arc::default(),
-            pdu_sync: Arc::default(),
-            event_sync: Arc::default(),
+            pdu_event_tx: NonClonable(pdu_event_tx),
+            error_store: primitive_error_store,
+            primitive_event_tx,
+            primitive_event_rx: Mutex::new(Some(primitive_event_rx)),
+            status_store: primitive_status_store,
+            dead_flag: primitive_dead_flag,
+            pdu_sync: Mutex::default(),
         });
 
         // Register cop reference for unique tag.
@@ -227,168 +295,42 @@ impl PduLogicalLink {
             Some(Arc::downgrade(&cop)),
         );
 
-        Ok(cop)
+        cop
     }
 
-    pub async fn start_primitive(
-        &self,
-        cop_type: &PduCopt,
-        data: &[u8],
-        params: Option<&PduPrimitiveParams>,
-        events_queue_size: Option<usize>,
-    ) -> GeneralResult<Arc<PduPrimitive>> {
-        let events_queue_size = events_queue_size.unwrap_or(COP_EVENTS_QUEUE_SIZE);
-        match self.worker.get() {
-            Some(worker) => {
-                let unique_tag: PduUniqueCopTag = random_non_zero_usize();
-                let (tx, rx) = mpsc::channel(events_queue_size);
-                let tx = Arc::new(tx);
-
-                // Register event tx for unique tag.
-                PduHandleManager::register_cop(
-                    self.api.unique_tag,
-                    unique_tag,
-                    Some(Arc::downgrade(&tx)),
-                    None,
-                );
-
-                let h_mod = self.get_module_handle();
-                let h_cll = self.get_cll_handle();
-                let cop_data = worker
-                    .pdu_start_com_primitive(
-                        h_mod,
-                        h_cll,
-                        cop_type.to_owned(),
-                        data.to_vec(),
-                        params.cloned(),
-                        Some(unique_tag),
-                    )
-                    .await?;
-
-                let cop = Arc::new_cyclic(|weak| PduPrimitive {
-                    me: weak.clone(),
-                    api: self.api.clone(),
-                    worker: OnceLock::from(worker.clone()),
-                    unique_tag,
-                    h_mod,
-                    h_cll,
-                    cop_data,
-                    params: params.cloned().into(),
-                    event_tx: tx,
-                    event_rx: Arc::new(TokioMutex::new(rx)),
-                    dead: Arc::default(),
-                    pdu_sync: Arc::default(),
-                    event_sync: Arc::default(),
-                });
-
-                // Register cop reference for unique tag.
-                PduHandleManager::register_cop(
-                    self.api.unique_tag,
-                    unique_tag,
-                    None,
-                    Some(Arc::downgrade(&cop)),
-                );
-
-                Ok(cop)
-            }
-            None => {
-                let me = self.take_me_expect();
-
-                let cop_type = cop_type.to_owned();
-                let data = data.to_vec();
-                let params = params.cloned();
-
-                let thread = move || {
-                    me.blocking_start_primitive(
-                        &cop_type,
-                        &data,
-                        params.as_ref(),
-                        Some(events_queue_size),
-                    )
-                };
-
-                let cop = spawn_blocking(thread).await.expect(
-                    "internal error: ComLogicalLink::blocking_start_com_primitive() task panicked",
-                )?;
-
-                Ok(cop)
-            }
-        }
-    }
-
-    pub fn blocking_start_comm(&self, builder: StartComm) -> GeneralResult<Arc<PduPrimitive>> {
-        self.blocking_start_primitive(
-            &PduCopt::StartComm,
+    pub fn create_start_comm_primitive(&self, builder: StartComm) -> Arc<PduPrimitive> {
+        self.create_primitive(
+            PduCopt::StartComm,
             &builder.data,
             Some(&builder.build()),
             builder.events_queue_size,
         )
     }
 
-    pub async fn start_comm(&self, builder: StartComm) -> GeneralResult<Arc<PduPrimitive>> {
-        self.start_primitive(
-            &PduCopt::StartComm,
-            &builder.data,
-            Some(&builder.build()),
-            builder.events_queue_size,
-        )
-        .await
-    }
-
-    pub fn blocking_stop_comm(&self, builder: StopComm) -> GeneralResult<Arc<PduPrimitive>> {
-        self.blocking_start_primitive(
-            &PduCopt::StopComm,
+    pub fn create_stop_comm_primitive(&self, builder: StopComm) -> Arc<PduPrimitive> {
+        self.create_primitive(
+            PduCopt::StopComm,
             &builder.data,
             Some(&builder.build()),
             builder.events_queue_size,
         )
     }
 
-    pub async fn stop_comm(&self, builder: StopComm) -> GeneralResult<Arc<PduPrimitive>> {
-        self.start_primitive(
-            &PduCopt::StopComm,
-            &builder.data,
-            Some(&builder.build()),
-            builder.events_queue_size,
-        )
-        .await
-    }
-
-    pub fn blocking_send_recv(&self, builder: SendRecv) -> GeneralResult<Arc<PduPrimitive>> {
-        self.blocking_start_primitive(
-            &PduCopt::SendRecv,
+    pub fn create_send_recv_primitive(&self, builder: SendRecv) -> Arc<PduPrimitive> {
+        self.create_primitive(
+            PduCopt::SendRecv,
             &builder.data,
             Some(&builder.build()),
             builder.events_queue_size,
         )
     }
 
-    pub async fn send_recv(&self, builder: SendRecv) -> GeneralResult<Arc<PduPrimitive>> {
-        self.start_primitive(
-            &PduCopt::SendRecv,
-            &builder.data,
-            Some(&builder.build()),
-            builder.events_queue_size,
-        )
-        .await
+    pub fn create_update_param_primitive(&self) -> Arc<PduPrimitive> {
+        self.create_primitive(PduCopt::UpdateParam, &[], None, None)
     }
 
-    pub fn blocking_update_param(&self) -> GeneralResult<Arc<PduPrimitive>> {
-        self.blocking_start_primitive(&PduCopt::UpdateParam, &[], None, None)
-    }
-
-    pub async fn update_param(&self) -> GeneralResult<Arc<PduPrimitive>> {
-        self.start_primitive(&PduCopt::UpdateParam, &[], None, None)
-            .await
-    }
-
-    pub fn blocking_restore_param(&self) -> GeneralResult<Arc<PduPrimitive>> {
-        self.blocking_start_primitive(&PduCopt::RestoreParam, &[], None, None)
-    }
-
-    pub async fn restore_param(&self) -> GeneralResult<Arc<PduPrimitive>> {
-        self.start_primitive(&PduCopt::RestoreParam, &[], None, None)
-            .await
+    pub fn create_restore_param_primitive(&self) -> Arc<PduPrimitive> {
+        self.create_primitive(PduCopt::RestoreParam, &[], None, None)
     }
 
     pub fn blocking_set_com_params(&self, set_target: impl Into<SetTarget>) -> GeneralResult<()> {
@@ -480,7 +422,7 @@ impl PduLogicalLink {
                 let thread = move || me.blocking_set_com_params(set_target);
 
                 spawn_blocking(thread).await.expect(
-                    "internal error: ComLogicalLink::blocking_set_com_params() task panicked",
+                    "internal error: PduLogicalLink::blocking_set_com_params() task panicked",
                 )?;
             }
         }
@@ -502,7 +444,7 @@ impl PduLogicalLink {
                 for (unique_id, set) in v.iter() {
                     for def in set.iter() {
                         let cp = def.blocking_build(&self.api)?;
-                        table = table.add(unique_id.to_owned(), cp);
+                        table.add(unique_id.to_owned(), cp);
                     }
                 }
 
@@ -532,7 +474,7 @@ impl PduLogicalLink {
                     for (unique_id, set) in v.iter() {
                         for def in set.iter() {
                             let cp = def.build(worker.as_ref()).await?;
-                            table = table.add(unique_id.to_owned(), cp);
+                            table.add(unique_id.to_owned(), cp);
                         }
                     }
 
@@ -552,11 +494,56 @@ impl PduLogicalLink {
 
                 spawn_blocking(thread)
                     .await
-                    .expect("internal error: ComLogicalLink::blocking_set_unique_com_params_table() task panicked")?;
+                    .expect("internal error: PduLogicalLink::blocking_set_unique_com_params_table() task panicked")?;
             }
         }
 
         Ok(())
+    }
+
+    pub(crate) fn blocking_listen_events(
+        mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
+        mut logical_link_event_tx: broadcast::Sender<()>
+    ) {
+        loop {
+            let event = match pdu_event_rx.blocking_recv() {
+                Some(value) => value,
+                None => {
+                    // The channel will be closed when `drop()` is called for the `PduLogicalLink`.
+                    break;
+                }
+            };
+
+            if Self::handle_event(event, &mut logical_link_event_tx) {
+                break;
+            }
+        }
+    }
+
+    pub(crate) async fn listen_events(
+        mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
+        mut logical_link_event_tx: broadcast::Sender<()>
+    ) {
+        loop {
+            let event = match pdu_event_rx.recv().await {
+                Some(value) => value,
+                None => {
+                    // The channel will be closed when `drop()` is called for the `PduLogicalLink`.
+                    break;
+                }
+            };
+
+            if Self::handle_event(event, &mut logical_link_event_tx) {
+                break;
+            }
+        }
+    }
+
+    pub(crate) fn handle_event(
+        event: PduEvent,
+        module_event_tx: &mut broadcast::Sender<()>
+    ) -> StopReceive {
+        false
     }
 }
 
@@ -692,44 +679,53 @@ impl CllCreateType {
     }
 }
 
-/// Вспомогательная структура, используемая в функции [`PduWrapper::create_com_logical_link()`] при
-/// создании "логической связи".
-/// См. ISO 22900-2, глава D.2.3, таблица D.6.
+/// Flags used by [`PduApi`] when creating a Communication Logical Link.
+///
+/// Corresponds to ISO 22900-2, section D.2.3, table D.6.
+///
+/// [`PduApi`]: crate::api::PduApi
 #[derive(Debug, Clone)]
 pub struct CllCreateFlags {
     /// Byte 0, bit 7.
     ///
-    /// Обеспечивает возможность передачи всех принятых сообщений без изменений по каналу связи
-    /// (переданных и принятых).
+    /// Enables transparent transmission and reception of protocol messages
+    /// without removing protocol-specific bytes.
     ///
-    /// Эта функция зависит от протокола!
+    /// The exact behavior depends on the selected communication protocol.
     ///
-    /// [FALSE]: указывает, что API D-PDU будет удалять байты заголовка и контрольные суммы перед
-    /// возвратом (TxFlag ENABLE_EXTRA_INFO может быть использован для получения дополнительной
-    /// информации о заголовке/футере сообщения).
+    /// `false`:
+    /// - The D-PDU API removes protocol header bytes and checksums before
+    ///   returning received data.
     ///
-    /// [TRUE]: указывает, что байты заголовка и контрольные суммы будут оставлены в возвращаемом
-    /// элементе результата
+    /// - Additional header and footer information can be requested using
+    ///   the `TxFlag::ENABLE_EXTRA_INFO` flag.
+    ///
+    /// `true`:
+    /// - Protocol header bytes and checksum bytes are preserved in the
+    ///   returned result data.
     pub raw_mode: bool,
 
     /// Byte 0, bit 6.
     ///
-    /// API D-PDU будет создавать контрольную сумму для передачи сообщений.
+    /// Enables checksum generation by the D-PDU API for transmitted messages.
     ///
-    /// Этот флаг игнорируется, если для [raw_mode] установлено значение [false].
+    /// This flag is ignored when [`raw_mode`] is `false`.
     pub checksum_mode: bool,
 
     /// Byte 3, bit 0.
     ///
-    /// Действительно только для Softing D-PDU-API (не является частью ISO22900-2)!
+    /// Softing D-PDU-API specific extension.
     ///
-    /// Создает "мониторную" связь при вызове PDUCreateComLogicalLink, а не логическую связь.
+    /// This flag is not defined by ISO 22900-2.
     ///
-    /// Используется только в протоколах:
-    ///   - ISO_11898_RAW
-    ///   - ISO_14230_3_on_ISO_14230_2
+    /// When enabled, `PDUCreateComLogicalLink` creates a monitor logical
+    /// link instead of a regular communication logical link.
     ///
-    /// И только если для [raw_mode] установлено значение false.
+    /// Supported only for:
+    /// - `ISO_11898_RAW`
+    /// - `ISO_14230_3_on_ISO_14230_2`
+    ///
+    /// This flag is effective only when [`raw_mode`] is `false`.
     pub monitor_mode: bool,
 }
 
@@ -761,24 +757,6 @@ impl CllCreateFlags {
     }
 
     pub fn recommended() -> Self {
-        // Объяснение почему лучше иметь по умолчанию включенный режим "checksum":
-        //
-        // Природа D-PDU API заключается в том, чтобы управлять протоколами транспортного средства.
-        // Поэтому D-PDU API по своей природе делает контрольную сумму.
-        //
-        // Но если вы, например, хотите получить больше информации о глубоких слоях,
-        // вы можете включить режим RawMode.
-        //
-        // Многие удивляются, что, например, протоколы K-line больше не работают.
-        //
-        // Это происходит потому, что режим "Checksum" работает только тогда, когда
-        // включён режим "Raw".
-        //
-        // Так что, если вы хотите включить режим "Raw" только для некоторых протоколов, вам так
-        // же нужно включить режим "Checksum", чтобы всё работало, как и раньше.
-        //
-        // Поэтому лучше, чтобы режим "Checksum" был включён по умолчанию.
-
         Self {
             raw_mode: false,
             checksum_mode: true,
@@ -804,7 +782,7 @@ impl CllCreateFlags {
         b
     }
 
-    pub(crate) fn sb(&self) -> u8 {
+    pub(crate) fn tb(&self) -> u8 {
         let mut b = 0;
 
         if self.monitor_mode {
@@ -816,7 +794,7 @@ impl CllCreateFlags {
 
     /// Рассчитывает байтовый массив с учётом используемых режимов.
     pub(crate) fn get_pdu_flag_data(&self) -> [u8; 4] {
-        [self.zb(), 0, self.sb(), 0]
+        [self.zb(), 0, 0, self.tb()]
     }
 }
 
@@ -851,21 +829,6 @@ impl StartComm {
         StartComm::default()
     }
 
-    /// Use case.
-    pub fn monitor() -> Self {
-        Self::initial().with_receive_cycles(ReceiveCycles::Infinite)
-    }
-
-    /// Use case.
-    pub fn initial_with_recv_expected_ids(ids: Vec<u32>) -> Self {
-        Self::initial().with_expected_ids(ids)
-    }
-
-    /// Use case.
-    pub fn send_with_recv_expected_ids(data: &[u8], ids: Vec<u32>) -> Self {
-        Self::initial().with_data(data).with_expected_ids(ids)
-    }
-
     pub fn with_events_queue_size(mut self, size: usize) -> Self {
         self.events_queue_size = Some(size);
         self
@@ -888,24 +851,6 @@ impl StartComm {
 
     pub fn with_param_buffer(mut self, param_buffer: ComParamBuffer) -> Self {
         self.param_buffer = param_buffer;
-        self
-    }
-
-    pub fn with_expected_ids(mut self, ids: Vec<u32>) -> Self {
-        self.filters = vec![
-            ExpectedResponse {
-                response_type: ResponseType::Positive,
-                acceptance_id: 0,
-                mask_data: Default::default(),
-                unique_response_ids: ids.clone(),
-            },
-            ExpectedResponse {
-                response_type: ResponseType::Negative,
-                acceptance_id: 0,
-                mask_data: Default::default(),
-                unique_response_ids: ids,
-            },
-        ];
         self
     }
 
@@ -956,11 +901,6 @@ impl StopComm {
         Self::now().with_data(data)
     }
 
-    /// Use case.
-    pub fn later_with_send_and_recv_expected_ids(data: &[u8], ids: Vec<u32>) -> Self {
-        Self::now().with_data(data).with_expected_ids(ids)
-    }
-
     pub fn with_events_queue_size(mut self, size: usize) -> Self {
         self.events_queue_size = Some(size);
         self
@@ -983,24 +923,6 @@ impl StopComm {
 
     pub fn with_param_buffer(mut self, param_buffer: ComParamBuffer) -> Self {
         self.param_buffer = param_buffer;
-        self
-    }
-
-    pub fn with_expected_ids(mut self, ids: Vec<u32>) -> Self {
-        self.filters = vec![
-            ExpectedResponse {
-                response_type: ResponseType::Positive,
-                acceptance_id: 0,
-                mask_data: Default::default(),
-                unique_response_ids: ids.clone(),
-            },
-            ExpectedResponse {
-                response_type: ResponseType::Negative,
-                acceptance_id: 0,
-                mask_data: Default::default(),
-                unique_response_ids: ids,
-            },
-        ];
         self
     }
 
@@ -1045,27 +967,47 @@ pub struct SendRecv {
 }
 
 impl SendRecv {
-    /// Use case.
-    pub fn new(data: &[u8]) -> Self {
+    pub fn new(data: Option<&[u8]>) -> Self {
         SendRecv {
-            data: data.to_vec(),
+            data: data.map(|v| v.to_vec()).unwrap_or_default(),
             tx_flags: TransmitFlags::default(),
             send_cycles: SendCycles::Normal(1),
             receive_cycles: ReceiveCycles::Normal(1),
             param_buffer: ComParamBuffer::default(),
-            filters: Vec::default(),
+            filters: vec![
+                ExpectedResponse {
+                    response_type: ResponseType::Positive,
+                    acceptance_id: 1,
+                    mask_data: MaskData::empty(),
+                    unique_response_ids: vec![],
+                }
+            ],
             delay: Duration::from_millis(0),
             events_queue_size: None,
         }
     }
 
+    /// Use case.
     pub fn send_only(data: &[u8]) -> Self {
-        SendRecv::new(data).with_receive_cycles(ReceiveCycles::Normal(0))
+        SendRecv::new(Some(data)).with_no_receive()
     }
 
-    /// Use case.
-    pub fn monitor() -> Self {
-        Self::new(&[]).with_receive_cycles(ReceiveCycles::Infinite)
+    pub fn with_no_receive(mut self) -> Self {
+        self.with_receive_cycles(ReceiveCycles::Normal(0))
+    }
+
+    pub fn with_no_send(mut self) -> Self {
+        self.with_send_cycles(SendCycles::Normal(0))
+    }
+
+    pub fn with_data(mut self, data: &[u8]) -> Self {
+        self.data = data.to_vec();
+        self
+    }
+
+    pub fn add_data(mut self, data: &[u8]) -> Self {
+        self.data.extend_from_slice(data);
+        self
     }
 
     pub fn with_events_queue_size(mut self, size: usize) -> Self {
@@ -1075,6 +1017,15 @@ impl SendRecv {
 
     pub fn with_tx_flags(mut self, flags: TransmitFlags) -> Self {
         self.tx_flags = flags;
+        self
+    }
+
+    pub fn with_tx_flags_mut<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&mut TransmitFlags)
+    {
+        let flags = &mut self.tx_flags;
+        f(flags);
         self
     }
 
@@ -1096,24 +1047,6 @@ impl SendRecv {
         self
     }
 
-    pub fn with_expected_ids(mut self, ids: Vec<u32>) -> Self {
-        self.filters = vec![
-            ExpectedResponse {
-                response_type: ResponseType::Positive,
-                acceptance_id: 0,
-                mask_data: Default::default(),
-                unique_response_ids: ids.clone(),
-            },
-            ExpectedResponse {
-                response_type: ResponseType::Negative,
-                acceptance_id: 0,
-                mask_data: Default::default(),
-                unique_response_ids: ids,
-            },
-        ];
-        self
-    }
-
     pub fn with_filters(mut self, vec: Vec<ExpectedResponse>) -> Self {
         self.filters = vec;
         self
@@ -1125,16 +1058,52 @@ impl SendRecv {
     }
 }
 
+impl RawCanPrimitiveBuilderExt for SendRecv {
+    fn monitor() -> Self {
+        Self::new(None)
+            .with_no_send()
+            .with_receive_cycles(ReceiveCycles::Infinite)
+            .with_filters(vec![
+                ExpectedResponse {
+                    response_type: ResponseType::Positive,
+                    acceptance_id: 1,
+                    mask_data: MaskData::empty(),
+                    unique_response_ids: vec![]
+                }
+            ])
+    }
+
+    fn send_only_raw_can(frame: impl CanFrame) -> Self {
+        let mut data = frame.data().to_vec();
+
+        data.splice(0..0, frame.id().as_raw_unchecked().to_be_bytes());
+
+        Self::new(Some(&data))
+            .with_no_receive()
+            .with_tx_flags_mut(|flags| {
+                flags.can_29_bit = frame.is_extended();
+            })
+    }
+
+    fn send_recv_raw_can(frame: impl CanFrame) -> Self {
+        Self::send_only_raw_can(frame)
+            .with_send_cycles(SendCycles::Normal(1))
+            .with_receive_cycles(ReceiveCycles::Normal(1))
+            .with_filters(vec![
+                ExpectedResponse {
+                    response_type: ResponseType::Positive,
+                    acceptance_id: 1,
+                    mask_data: MaskData::empty(),
+                    unique_response_ids: vec![]
+                }
+            ])
+    }
+}
+
 impl sealed::Sealed for SendRecv {}
 impl CopParamsBuilder for SendRecv {
     fn build(&self) -> PduPrimitiveParams {
         let mut params = PduPrimitiveParams::default();
-
-        if self.send_cycles.to_i32() == 0 {
-            panic!("internal error: when PduCopt = SendRecv, send cycles must not be zero");
-        } // else if self.receive_cycles.to_i32() == 0 {
-        //    panic!("internal error: when PduCopt = SendRecv, receive cycles must not be zero");
-        //}
 
         params.send_cycles = self.send_cycles.clone();
         params.receive_cycles = self.receive_cycles.clone();

@@ -2,6 +2,14 @@ use crate::types::{PduCllHandle, PduCopHandle, PduModuleHandle, PduUniqueCopTag}
 use dpdu_api_types::{PDU_HANDLE_UNDEF, PduErrorEvt, PduInfo, PduStatus};
 use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, Once, OnceLock};
+use tokio::sync::{mpsc, oneshot, watch, Notify};
+
+/// Flag indicating whether event reception from the D-PDU API should be stopped.
+///
+/// Used by `PduVci`, `PduLogicalLink`, and `PduPrimitive` event handlers to
+/// signal that the receiving loop should terminate.
+pub type StopReceive = bool;
 
 #[derive(Debug, Clone)]
 pub struct PduEvent {
@@ -154,29 +162,57 @@ impl DerefMut for PduStatusEvent {
     }
 }
 
+/// Result notification event containing received data.
+///
+/// Generated for the `PDU_IT_RESULT` item.
 #[derive(Debug, Clone)]
 pub struct PduResultEvent {
+    /// Receive message status flags.
     pub rx_flags: PduResultEventRxFlags,
 
+    /// Unique identifier of the ECU response.
     pub unique_resp_identifier: u32,
 
+    /// Acceptance ID from the matched Expected Response entry.
+    ///
+    /// When multiple Expected Response entries match the received data,
+    /// the first matching entry in the Expected Response array is selected.
+    /// Entries are evaluated in array order, where lower indices have higher priority.
     pub acceptance_id: u32,
 
+    /// Bit-oriented timestamp validity flags.
+    ///
+    /// If no timestamp flags are set, timestamp values are invalid.
     pub timestamp_flags: PduResultEventTimestampFlags,
 
+    /// Timestamp in microseconds when transmission of the tester request completed.
     pub tx_msg_done_timestamp: u32,
 
+    /// Timestamp in microseconds when the ECU response started.
+    ///
+    /// Indicates the start of the received response message.
     pub start_msg_timestamp: u32,
 
-    /// Если [ComLogicalLink] была создана с флагом [RawMode], то данные включают:
-    ///   - байты заголовка
-    ///   - контрольную сумму
-    ///   - байты данных сообщения
-    ///   - дополнительные данные, если таковые имеются.
+    /// Received PDU data.
+    ///
+    /// In RawMode, contains protocol frame data including:
+    /// header bytes, checksum, payload and optional extra data.
+    ///
+    /// For ISO 11898, ISO 15765 and SAE J1939,
+    /// the first four bytes contain the CAN identifier,
+    /// followed by the optional extended address byte.
     pub data: Vec<u8>,
 
+    /// Response PDU header bytes.
     pub extra_info_header: Option<Vec<u8>>,
 
+    /// Response PDU footer bytes.
+    ///
+    /// May contain extra protocol-specific data, such as:
+    /// - IFR data for SAE J1850 PWM;
+    /// - checksum bytes for ISO 14230.
+    ///
+    /// Empty when no footer data is present.
     pub extra_info_footer: Option<Vec<u8>>,
 }
 
@@ -204,8 +240,11 @@ impl DerefMut for PduResultEventRxFlags {
 }
 
 impl PduResultEventRxFlags {
-    /// Обнаружен ли CAN фрейм RTR.
-    /// Первый байт содержит DLC.
+    /// Returns `true` if a CAN Remote Frame was detected.
+    ///
+    /// A Remote Frame does not contain data bytes.
+    ///
+    /// The first byte of the D-PDU data contains the Data Length Code (DLC).
     pub fn is_remote_frame(&self) -> bool {
         if let Some(byte) = self.get(0) {
             return (*byte & 0x80) != 0;
@@ -214,7 +253,7 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// Указывает, что последовательная шина перешла на новую скорость.
+    /// Returns `true` if the communication bus transitioned to a new speed rate.
     pub fn is_speed_change_event(&self) -> bool {
         if let Some(byte) = self.get(1) {
             return (*byte & 0x04) != 0;
@@ -222,11 +261,10 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// Коммуникационные параметры класса Timing были изменены для текущего логического
-    /// соединения.
+    /// Returns `true` if the ECU timing communication parameters were modified.
     ///
-    /// Этот флаг будет установлен только в том случае, если в текущем логическом соединении
-    /// установлен коммуникационный параметр CP_ModifyTiming.
+    /// This flag is only available when the `CP_ModifyTiming`
+    /// ComParam is enabled.
     pub fn is_ecu_timing_changed(&self) -> bool {
         if let Some(byte) = self.get(1) {
             return (*byte & 0x02) != 0;
@@ -234,7 +272,11 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// По шине SW CAN было принято сообщения High Voltage.
+    /// <summary>
+    ///     Indicates that the Single Wire CAN message received was a High-Voltage Message
+    ///     false = Normal Message
+    ///     true = High-Voltage Message
+    /// </summary>
     pub fn is_sw_can_high_voltage_msg(&self) -> bool {
         if let Some(byte) = self.get(1) {
             return (*byte & 0x01) != 0;
@@ -242,21 +284,24 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// Формат CAN фрейма принятого по шине CAN.
-    ///
-    /// Действует только если текущее логическое соединение было создано с параметром [raw mode].
+    /// Returns true if the CAN frame uses a 29-bit extended identifier.
     pub fn is_can_29_bit_id(&self) -> bool {
-        if let Some(byte) = self.get(3) {
-            return (*byte & 0x80) != 0;
+        if let Some(byte) = self.get(2) {
+            return (*byte & 0x01) != 0;
         }
         false
     }
 
-    /// Было ли полученное сообщение обработано как сегментированное или нет.
+    /// Returns `true` if ISO 15765-2 transport segmentation was detected.
     ///
-    /// Если да, то информация сегмента будет вырезана из PDU Data.
+    /// This flag is only valid in `RawMode`
+    /// when enabled through [`CllCreateFlags`].
     ///
-    /// Действует только если текущее логическое соединение было создано с параметром [raw mode].
+    /// If segmentation handling was performed,
+    /// transport protocol segment information was removed
+    /// from the PDU data.
+    ///
+    /// [`CllCreateFlags`]: crate::types::pdu_com_logical_link::CllCreateFlags
     pub fn is_can_segmentation(&self) -> bool {
         if let Some(byte) = self.get(3) {
             return (*byte & 0x40) != 0;
@@ -264,10 +309,15 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// Была ли фактическая длина сообщения меньше 8 байт.
+    /// Returns `true` if an ISO 15765 padding error was detected.
     ///
-    /// Действует только для протокола ISO 15765, и только если текущее логическое соединение
-    /// было создано с параметром [raw mode].
+    /// This flag is only valid in `RawMode`
+    /// when enabled through [`CllCreateFlags`].
+    ///
+    /// Indicates that a received CAN frame contained fewer than
+    /// 8 data bytes while padding was expected.
+    ///
+    /// [`CllCreateFlags`]: crate::types::pdu_com_logical_link::CllCreateFlags
     pub fn is_iso_15765_padding_error(&self) -> bool {
         if let Some(byte) = self.get(3) {
             return (*byte & 0x10) != 0;
@@ -275,7 +325,7 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// Индикация передачи.
+    /// Returns `true` if a TxDone indication is present.
     pub fn get_tx_status(&self) -> bool {
         if let Some(byte) = self.get(3) {
             return (*byte & 0x08) != 0;
@@ -283,7 +333,8 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// SAE J2610 и SAE J1850 VPW. Получен ли индикатор разрыва.
+    /// Returns `true` if a SAE J2610 or SAE J1850 VPW break indication
+    /// was received.
     pub fn get_rx_break_status(&self) -> bool {
         if let Some(byte) = self.get(3) {
             return (*byte & 0x04) != 0;
@@ -291,8 +342,11 @@ impl PduResultEventRxFlags {
         false
     }
 
-    /// Указывает на прием первого байта сообщения ISO 9141 или ISO 14230, или первого
-    /// кадра многокадрового сообщения ISO 15765.
+    /// Returns `true` if the event indicates the start of message reception.
+    ///
+    /// This indicates:
+    /// - the first byte of an ISO 9141 or ISO 14230 message;
+    /// - the first frame of an ISO 15765 multi-frame message.
     pub fn is_start_of_message(&self) -> bool {
         if let Some(byte) = self.get(3) {
             return (*byte & 0x02) != 0;
@@ -300,9 +354,31 @@ impl PduResultEventRxFlags {
         false
     }
 
+
+    /// Returns `true` if the message is a Transmit Loopback message.
+    ///
+    /// A Transmit Loopback message is an echo of a message
+    /// transmitted by the communication device itself.
     pub fn get_tx_msg_type(&self) -> bool {
         if let Some(byte) = self.get(3) {
             return (*byte & 0x01) != 0;
+        }
+        false
+    }
+
+    /// Returns `true` if ISO 15765 extended addressing is used.
+    ///
+    /// This flag is only valid in `RawMode`
+    /// when enabled through [`CllCreateFlags`].
+    ///
+    /// When extended addressing is used,
+    /// the extended address byte follows the CAN identifier
+    /// in the PDU data.
+    ///
+    /// [`CllCreateFlags`]: crate::types::pdu_com_logical_link::CllCreateFlags
+    pub fn is_iso_15765_addr_type(&self) -> bool {
+        if let Some(byte) = self.get(3) {
+            return (*byte & 0x80) != 0;
         }
         false
     }
@@ -382,5 +458,31 @@ impl Display for PduInfoEvent {
             self.code.as_ref(),
             self.extra_code
         )
+    }
+}
+
+/// Stores a single error event produced by a D-PDU primitive.
+///
+/// The event can be written only once and remains available for the lifetime
+/// of the store.
+#[derive(Debug)]
+pub struct ErrorEventStore(OnceLock<PduErrorEvent>);
+
+impl ErrorEventStore {
+    /// Creates a new empty error event store.
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self(OnceLock::default()))
+    }
+
+    /// Stores an error event.
+    ///
+    /// Returns the provided event back if an error has already been stored.
+    pub(crate) fn set(&self, event: PduErrorEvent) -> Result<(), PduErrorEvent> {
+        self.0.set(event)
+    }
+
+    /// Returns the stored error event, if any.
+    pub fn get(&self) -> Option<&PduErrorEvent> {
+        self.0.get()
     }
 }

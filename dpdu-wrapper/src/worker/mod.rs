@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 
 pub type WorkerResult<T> = std::result::Result<T, WorkerError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum WorkerError {
     #[error("channel error: {0}")]
     ChannelError(String),

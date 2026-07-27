@@ -1,6 +1,6 @@
 pub type GeneralResult<T> = ::std::result::Result<T, GeneralError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[error("general pdu error: {0}")]
 pub enum GeneralError {
     #[error("api error: {0}")]
@@ -10,5 +10,5 @@ pub enum GeneralError {
     WorkerError(#[from] crate::worker::WorkerError),
 
     #[error("primitive error: {0}")]
-    CopError(#[from] crate::types::pdu_com_primitive::CopError),
+    PrimitiveError(#[from] crate::types::pdu_com_primitive::PrimitiveError)
 }

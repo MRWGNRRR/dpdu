@@ -141,22 +141,40 @@ where
         ComParamDefinitionTable(HashMap::new())
     }
 
-    pub fn add(mut self, id: PduUniqueRespIdentifier, com_param: T) -> Self {
+    pub fn add(&mut self, id: PduUniqueRespIdentifier, com_param: T) -> &mut Self {
         self.entry(id).or_default().replace(com_param);
         self
     }
 
-    pub fn add_with_ecu_name(mut self, name: &str, com_param: T) -> Self {
+    pub fn add_with_ecu_name(&mut self, name: &str, com_param: T) -> &mut Self {
         self.entry(ecu_name_to_unique_resp_id(name))
             .or_default()
             .replace(com_param);
         self
     }
 
+    pub fn add_set<I>(&mut self, id: PduUniqueRespIdentifier, set: I) -> &mut Self
+    where
+        I: IntoIterator<Item = T>
+    {
+        self.entry(id).or_default().extend(set);
+        self
+    }
+
+    pub fn add_set_with_ecu_name<I>(&mut self, name: &str, set: I) -> &mut Self
+    where
+        I: IntoIterator<Item = T>
+    {
+        self.entry(ecu_name_to_unique_resp_id(name))
+            .or_default()
+            .extend(set);
+        self
+    }
+
     pub fn merge(mut self, another: Self) -> Self {
         for (id, set) in another.0 {
             for def in set {
-                self = self.add(id, def);
+                self.add(id, def);
             }
         }
         self

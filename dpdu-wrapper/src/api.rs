@@ -1,18 +1,15 @@
 use crate::constants::API_EVENTS_QUEUE_SIZE;
 use crate::error::GeneralError;
 use crate::handle_manager::PduHandleManager;
-use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, PduCllData};
+use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, PduCllData, PduLogicalLink};
 use crate::types::pdu_com_param::table::PduComParamTable;
 use crate::types::pdu_com_param::{
     ByteFieldComParam, CpVariant, LongFieldComParam, PduComParam, StructComParam,
     StructFieldComParam,
 };
-use crate::types::pdu_com_primitive::{PduCopData, PduPrimitiveParams};
+use crate::types::pdu_com_primitive::{PduPrimitiveParams};
 use crate::types::pdu_error::{PduErrorData, PduLastErrorTarget};
-use crate::types::pdu_event::{
-    PduErrorEvent, PduEvent, PduEventData, PduEventTarget, PduInfoEvent, PduResultEvent,
-    PduStatusEvent,
-};
+use crate::types::pdu_event::{PduErrorEvent, PduEvent, PduEventData, PduEventTarget, PduInfoEvent, PduResultEvent, PduStatusEvent, StopReceive};
 use crate::types::pdu_io_ctl::{IoCtlByteArray, PduIoCtlCommand, PduIoCtlData, PduIoCtlTarget};
 use crate::types::pdu_lock_resource::PduLockResourceMask;
 use crate::types::pdu_module::{
@@ -30,7 +27,7 @@ use crate::types::{
 };
 use crate::utils::module_description::{PduModuleDescription, PduModuleDescriptionError};
 use crate::utils::root_file::Mvci;
-use crate::utils::{PhantomRef, c_str, random_non_zero_usize, take_slice_ptr};
+use crate::utils::{PhantomRef, c_str, random_non_zero_usize, take_slice_ptr, NonClonable};
 use crate::vendor_specific::wrap_pdu_call;
 use dpdu_api_types::{
     CopCtrlData, EcuUniqueRespData, ErrorData, EventCallbackFn, EventItem, ExpRespData, FlagData,
@@ -59,25 +56,33 @@ use std::{ptr, slice};
 use std::any::type_name;
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
+use std::thread::spawn;
 use dpdu_api_types::bitflags::PduErrorFlag;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use scopeguard::defer;
 use thread_local::ThreadLocal;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{Level, debug, error, info, trace, warn};
+use crate::types::pdu_vci::PduVci;
 
 pub type ApiResult<T> = Result<T, ApiError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ApiError {
     #[error("ffi error: {0}")]
-    FfiError(#[from] libloading::Error),
+    FfiError(String),
 
     #[error("pdu error: {0}")]
     PduError(#[from] PduError),
 
     #[error("module description error: {0}")]
     MdfError(#[from] PduModuleDescriptionError),
+}
+
+impl From<libloading::Error> for ApiError {
+    fn from(value: libloading::Error) -> Self {
+        Self::FfiError(value.to_string())
+    }
 }
 
 impl From<PduError> for GeneralError {
@@ -88,7 +93,7 @@ impl From<PduError> for GeneralError {
 
 impl From<libloading::Error> for GeneralError {
     fn from(value: libloading::Error) -> Self {
-        GeneralError::ApiError(ApiError::FfiError(value))
+        GeneralError::ApiError(ApiError::FfiError(value.to_string()))
     }
 }
 
@@ -207,15 +212,40 @@ pub struct PduApi {
 
     pub module_description: Option<PduModuleDescription>,
 
-    pub(crate) event_tx: Arc<mpsc::Sender<PduEvent>>,
-
-    pub event_rx: Arc<mpsc::Receiver<PduEvent>>,
-
     mvci: Option<Mvci>,
 
     symbols: ApiSymbols,
 
     suppress_log_options: ThreadLocal<Arc<RwLock<SuppressLogOptions>>>,
+
+    /// Event channel sender owned by [`PduApi`].
+    ///
+    /// The sender is intentionally dropped when [`PduApi`] is dropped,
+    /// allowing the event listener to detect shutdown.
+    ///
+    /// A weak reference is stored in [`PduHandleManager`] to keep track of the
+    /// channel lifetime and to automatically stop event listening in
+    /// [`PduApi::listen_events`] and
+    /// [`PduApi::blocking_listen_events`].
+    ///
+    /// # Safety
+    ///
+    /// This sender must not be cloned. Cloning it would extend the channel
+    /// lifetime beyond [`PduApi`] and prevent listeners from being
+    /// automatically stopped.
+    ///
+    /// [`PduHandleManager`]: crate::handle_manager::PduHandleManager
+    pub(crate) pdu_event_tx: NonClonable<mpsc::UnboundedSender<PduEvent>>,
+
+    /// Sender used to create additional receivers after the initial receiver
+    /// has been taken.
+    pub(crate) api_event_tx: broadcast::Sender<()>,
+
+    /// The initial receiver returned by the first [`get_api_event_receiver`] call.
+    ///
+    /// After the receiver is taken, subsequent calls create new receivers from
+    /// [`api_event_tx`].
+    pub(crate) api_event_rx: Mutex<Option<broadcast::Receiver<()>>>,
 }
 
 impl Debug for PduApi {
@@ -227,8 +257,9 @@ impl Debug for PduApi {
             .field("library", &self.library)
             .field("library_file", &self.library_file)
             .field("module_description", &self.module_description)
-            .field("event_tx", &self.event_tx)
-            .field("event_rx", &self.event_rx)
+            .field("pdu_event_tx", &self.pdu_event_tx)
+            .field("api_event_tx", &self.api_event_tx)
+            .field("api_event_rx", &self.api_event_rx)
             .field("mvci", &self.mvci)
             .field("symbols", &self.symbols)
             .finish()
@@ -277,8 +308,18 @@ impl PduApi {
             }
         };
 
-        let (tx, rx) = mpsc::channel(API_EVENTS_QUEUE_SIZE);
-        let tx = Arc::new(tx);
+        let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
+
+        let (api_event_tx, api_event_rx) = broadcast::channel(API_EVENTS_QUEUE_SIZE);
+
+        // This thread is necessary for receiving events from the D-PDU API via the built-in
+        // event callback mechanism, in order to generate the high-level events that
+        // are actually required when using PduApi.
+        spawn({
+            let api_event_tx = api_event_tx.clone();
+            move || PduApi::blocking_listen_events(pdu_event_rx, api_event_tx)
+        });
+
         let result = Arc::new_cyclic(|me| Self {
             me: me.clone(),
             pdu_options: options,
@@ -286,14 +327,15 @@ impl PduApi {
             library,
             library_file,
             module_description,
-            event_tx: tx.clone(),
-            event_rx: Arc::new(rx),
             mvci,
             symbols,
             suppress_log_options: ThreadLocal::default(),
+            pdu_event_tx: NonClonable(pdu_event_tx.clone()),
+            api_event_tx,
+            api_event_rx: Mutex::new(Some(api_event_rx)),
         });
 
-        PduHandleManager::register_api(&result, Arc::downgrade(&tx));
+        PduHandleManager::register_api(&result, pdu_event_tx.downgrade());
 
         Ok(result)
     }
@@ -830,7 +872,7 @@ impl PduApi {
                     self.log_api_call_fail(
                         FUNC,
                         result,
-                        Some("unsupported com param".to_string()),
+                        Some(format!("unsupported com param: {object_id}")),
                         Some(Level::WARN),
                     );
                     Err(PduError::ComParamNotSupported)?
@@ -1040,7 +1082,7 @@ impl PduApi {
                     self.log_api_call_fail(
                         FUNC,
                         result,
-                        Some("unsupported com param".to_string()),
+                        Some(format!("unsupported com param: {cp}")),
                         Some(Level::WARN),
                     );
                     Err(PduError::ComParamNotSupported)?
@@ -1072,6 +1114,7 @@ impl PduApi {
 
         let mut temp_com_param_groups: HashMap<EphemeralGroupKey, Vec<ParamItem>> =
             HashMap::with_capacity(table.len());
+
         let mut temp_unique_groups: Vec<EcuUniqueRespData> = Vec::with_capacity(table.len());
 
         for (key, (unique_resp_identifier, group_set)) in table.iter().enumerate() {
@@ -1110,7 +1153,6 @@ impl PduApi {
                     func = FUNC,
                     group = key,
                     com_param = cp.get_debug_name(),
-                    com_param_ptr = format!("{:#x}", &item as *const _ as usize),
                     "D-PDU API Call Args"
                 );
 
@@ -1124,14 +1166,14 @@ impl PduApi {
             temp_unique_groups.push(EcuUniqueRespData {
                 unique_resp_identifier: *unique_resp_identifier,
                 num_param_items: temp_com_param_group.len() as _,
-                p_params: take_slice_ptr(&temp_com_param_group),
+                p_params: take_slice_ptr(temp_com_param_group.as_slice()),
             });
         }
 
         let table = UniqueRespIdTableItem {
             item_type: PduIt::UniqueRespIdTable,
             num_entries: temp_unique_groups.len() as _,
-            p_unique_data: take_slice_ptr(&temp_unique_groups),
+            p_unique_data: take_slice_ptr(temp_unique_groups.as_slice()),
         };
 
         trace!(
@@ -1215,7 +1257,7 @@ impl PduApi {
         data: &[u8],
         params: Option<&PduPrimitiveParams>,
         tag: Option<PduUniqueCopTag>,
-    ) -> ApiResult<PduCopData> {
+    ) -> ApiResult<PduCopHandle> {
         impl_defer_clear_suppress_options!(self, start_primitive);
 
         const FUNC: &'static str = "PDUStartComPrimitive";
@@ -1314,7 +1356,7 @@ impl PduApi {
                             mask_pattern_len = v.mask_data.pattern.len(),
                             mask_pattern = ?v.mask_data.pattern,
 
-                            unique_response_ids_ptr = format!("{:#x}", take_slice_ptr(&v.unique_response_ids) as usize),
+                            unique_response_ids_ptr = format!("{:#x}", take_slice_ptr(v.unique_response_ids.as_slice()) as usize),
                             unique_response_ids_len = v.unique_response_ids.len(),
                             unique_response_ids = ?v.unique_response_ids,
 
@@ -1328,7 +1370,7 @@ impl PduApi {
                             p_mask_data: take_slice_ptr(v.mask_data.get_mask()),
                             p_pattern_data: take_slice_ptr(v.mask_data.get_pattern()),
                             num_unique_resp_ids: v.unique_response_ids.len() as _, // TODO : heap corruption only under cargo run
-                            p_unique_resp_ids: take_slice_ptr(&v.unique_response_ids),
+                            p_unique_resp_ids: take_slice_ptr(v.unique_response_ids.as_slice()),
                         }
                     })
                     .collect::<Vec<_>>();
@@ -1340,13 +1382,13 @@ impl PduApi {
                     temp_param_update: params.temp_param_update as _,
                     tx_flag: FlagData {
                         num_flag_bytes: flags.len() as _,
-                        p_flag_data: take_slice_ptr(&flags),
+                        p_flag_data: take_slice_ptr(flags.as_slice()),
                     },
                     num_possible_expected_responses: expected_responses.len() as _,
-                    expected_response_array: take_slice_ptr(&expected_responses),
+                    expected_response_array: take_slice_ptr(expected_responses.as_slice()),
                 };
 
-                let data_ptr = take_slice_ptr(&data);
+                let data_ptr = take_slice_ptr(data);
 
                 trace!(
                     func = FUNC,
@@ -1384,10 +1426,7 @@ impl PduApi {
 
         trace!(func = FUNC, cop_handle, "D-PDU API Call Return");
 
-        Ok(PduCopData {
-            h_cop: cop_handle,
-            cop_type,
-        })
+        Ok(cop_handle)
     }
 
     ///| IOCTL Short Name                      | Target | Input Data Type               | Output Data Type            | Purpose
@@ -2638,7 +2677,7 @@ impl PduApi {
 
                 com_param.try_init_short_name(self);
 
-                map = map.add(unique_id, com_param);
+                map.add(unique_id, com_param);
             }
         }
 
@@ -2662,6 +2701,10 @@ impl PduApi {
             }
             _ => {}
         }
+
+        self.modify_suppress_log_options(|options| {
+            options.register_event_callback = PduErrorFlag::MODULE_NOT_CONNECTED;
+        });
 
         let _ = self.pdu_register_event_callback(&PduEventTarget::Module(h_mod), None)?;
 
@@ -2726,6 +2769,7 @@ impl PduApi {
             &PduIoCtlCommand::from("PDU_IOCTL_RESET"),
             None,
         )?;
+
         Ok(())
     }
 
@@ -3002,6 +3046,32 @@ impl PduApi {
                 Err(PduError::FctFailed)?
             }
         }
+    }
+
+    pub(crate) fn blocking_listen_events(
+        mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
+        mut api_event_tx: broadcast::Sender<()>,
+    ) {
+        loop {
+            let event = match pdu_event_rx.blocking_recv() {
+                Some(value) => value,
+                None => {
+                    // The channel will be closed when `drop()` is called for the `PduApi`.
+                    break;
+                }
+            };
+
+            if Self::handle_event(event, &mut api_event_tx) {
+                break;
+            }
+        }
+    }
+
+    pub(crate) fn handle_event(
+        event: PduEvent,
+        api_event_tx: &mut broadcast::Sender<()>
+    ) -> StopReceive {
+        false
     }
 }
 

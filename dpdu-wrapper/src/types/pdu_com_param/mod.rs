@@ -12,7 +12,7 @@ use dpdu_api_types::{
     ParamStructSessionTiming, PduCpst, PduError, PduObjt, PduPc, PduPt,
 };
 use std::ffi::c_void;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 use tokio::task::spawn_blocking;
@@ -46,6 +46,15 @@ impl PartialEq for PduComParam {
 }
 
 impl Eq for PduComParam {}
+
+impl Display for PduComParam {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.short_name.get() {
+            Some(v) => write!(f, "{v} - #{}", self.id),
+            None => write!(f, "#{}", self.id)
+        }
+    }
+}
 
 impl PduComParam {
     pub fn from_id(id: PduObjectId, class: PduPc, variant: impl Into<CpVariant>) -> Self {

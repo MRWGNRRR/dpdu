@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use std::time::Instant;
 use tracing::{error, info, warn};
 
-use crate::utils::get_bomless_file_reader;
+use crate::utils::{get_bomless_file_reader, get_winreg_arch_flags, HKEY_LM_REG_KEY};
 pub use semver::VersionReq;
 
 #[derive(Debug, thiserror::Error)]
@@ -156,25 +156,12 @@ impl PduRootFile {
         use winreg::RegKey;
         use winreg::enums::{self, HKEY_LOCAL_MACHINE};
 
-        #[allow(non_snake_case)]
-        let HKEY_LM_REG_KEY = RegKey::predef(HKEY_LOCAL_MACHINE);
-
-        cfg_if! {
-            if #[cfg(target_arch = "x86_64")] {
-                let flags = enums::KEY_READ;
-            } else if #[cfg(target_arch = "x86")] {
-                let flags = enums::KEY_READ | enums::KEY_WOW64_32KEY;
-            } else {
-                compile_error!("Unsupported target architecture");
-            }
-        }
-
         const WINREG_PATH: &'static str = "SOFTWARE\\D-PDU API";
         const WINREG_KEY: &'static str = "Root File";
 
         info!("Reading a path of the D-PDU API root file through the Windows registry...");
 
-        let path = HKEY_LM_REG_KEY.open_subkey_with_flags(WINREG_PATH, flags)
+        let path = HKEY_LM_REG_KEY.open_subkey_with_flags(WINREG_PATH, get_winreg_arch_flags())
             .inspect_err(|err| error!(path = WINREG_PATH, "Registry path cannot be opened: {err:?}"))
             .map(|sub_key| sub_key.get_value::<String, _>(WINREG_KEY))
             .inspect_err(|err| error!(path = WINREG_PATH, key = WINREG_KEY, "Registry value cannot be read: {err:?}"))?

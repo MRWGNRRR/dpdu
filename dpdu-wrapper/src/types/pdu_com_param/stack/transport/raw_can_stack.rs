@@ -54,6 +54,20 @@ pub struct RawCanTransportStack {
 }
 
 impl RawCanTransportStack {
+    pub fn configure_for_receive_11_bit(&mut self, id: u16) -> &mut Self {
+        self.can_resp_uudt_format = CpCanRespUudtFormat::NORMAL_UNSEGMENTED_11_BIT;
+        self.can_resp_uudt_id = CpCanRespUudtId(id as _);
+        self.can_resp_uudt_ext_addr = CpCanRespUudtExtAddr::ZERO;
+        self
+    }
+
+    pub fn configure_for_receive_29_bit(&mut self, id: u32) -> &mut Self {
+        self.can_resp_uudt_format = CpCanRespUudtFormat::NORMAL_UNSEGMENTED_29_BIT;
+        self.can_resp_uudt_id = CpCanRespUudtId::NOT_USED;
+        self.can_resp_uudt_ext_addr = CpCanRespUudtExtAddr(id);
+        self
+    }
+
     pub fn set_can_filler_byte(&mut self, byte: impl Into<CpCanFillerByte>) -> &mut Self {
         self.can_filler_byte = byte.into();
         self
