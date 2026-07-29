@@ -5,7 +5,8 @@ authors = ["Ashcon Mohseninia <ashconm@outlook.com>", "MRWGNRRR <171420035+MRWGN
 edition = "2024"
 description = "An implementation of the core D-PDU (ISO22900-2) library in Rust"
 license = "MIT"
-repository = "https://github.com/MRWGNRRR/dpdu-api-types"
+repository = "https://github.com/MRWGNRRR/dpdu"
+documentation = "https://docs.rs/dpdu-api-types"
 readme = "README.md"
 keywords = ["ISO22900", "dpdu", "ecu", "VCI", "diagnostics"]
 
