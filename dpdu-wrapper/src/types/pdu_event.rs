@@ -2,8 +2,7 @@ use crate::types::{PduCllHandle, PduCopHandle, PduModuleHandle, PduUniqueCopTag}
 use dpdu_api_types::{PDU_HANDLE_UNDEF, PduErrorEvt, PduInfo, PduStatus};
 use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Once, OnceLock};
-use tokio::sync::{mpsc, oneshot, watch, Notify};
+use std::sync::{Arc, OnceLock};
 
 /// Flag indicating whether event reception from the D-PDU API should be stopped.
 ///
@@ -353,7 +352,6 @@ impl PduResultEventRxFlags {
         }
         false
     }
-
 
     /// Returns `true` if the message is a Transmit Loopback message.
     ///

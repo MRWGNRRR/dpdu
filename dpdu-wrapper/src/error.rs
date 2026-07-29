@@ -10,5 +10,5 @@ pub enum GeneralError {
     WorkerError(#[from] crate::worker::WorkerError),
 
     #[error("primitive error: {0}")]
-    PrimitiveError(#[from] crate::types::pdu_com_primitive::PrimitiveError)
+    PrimitiveError(#[from] crate::types::pdu_com_primitive::PrimitiveError),
 }

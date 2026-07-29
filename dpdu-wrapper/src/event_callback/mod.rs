@@ -2,8 +2,8 @@ use crate::handle_manager::PduHandleManager;
 use crate::types::pdu_event::{PduEvent, PduEventTarget};
 use crate::types::{PduCllHandle, PduModuleHandle, PduUniqueApiTag, PduUniqueCllTag};
 use dpdu_api_types::PduEvtData;
-use std::ffi::c_void;
 use dpdu_api_types::bitflags::PduErrorFlag;
+use std::ffi::c_void;
 use tracing::{debug, error, trace, warn};
 
 pub(crate) unsafe extern "system-unwind" fn event_callback(
@@ -39,7 +39,7 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
             Ok(Some(v)) => events.push(v),
             Ok(None) => {
                 break;
-            },
+            }
             Err(err) => {
                 if event_target.is_logical_link() {
                     // I'm suppressing this because the ComLogicalLink handle can be destroyed,
@@ -112,7 +112,10 @@ pub(crate) unsafe extern "system-unwind" fn event_callback(
                 if let Some(h_cop) = event.h_cop {
                     // ComPrimitive event.
                     let Some(cop_tag) = event.cop_tag else {
-                        warn!(h_cop, "PDUEventCallback: API does not provide a primitive tag");
+                        warn!(
+                            h_cop,
+                            "PDUEventCallback: API does not provide a primitive tag"
+                        );
                         continue;
                     };
 

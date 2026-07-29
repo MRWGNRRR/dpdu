@@ -23,7 +23,7 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
             }
         }
     });
-    
+
     let response_variants = input.items.iter().map(|rpc| {
         let doc_hidden = rpc.private.then(|| quote! { #[doc(hidden)] });
         let name = &rpc.variant;

@@ -1,20 +1,19 @@
 use crate::api::PduApi;
 use crate::error::{GeneralError, GeneralResult};
-use crate::types::pdu_event::{ErrorEventStore, PduErrorEvent, PduEvent, PduEventData, PduResultEvent, PduStatusEvent, StopReceive};
+use crate::types::pdu_event::{
+    ErrorEventStore, PduErrorEvent, PduEvent, PduEventData, PduResultEvent, StopReceive,
+};
 use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
 use crate::types::{PduCllHandle, PduCopHandle, PduModuleHandle, PduUniqueCopTag};
+use crate::utils::NonClonable;
 use crate::worker::{PduAsyncWorker, Query};
-use dpdu_api_types::{PduCopt, PduError, PduErrorEvt, PduStatus};
+use dpdu_api_types::{PduCopt, PduErrorEvt, PduStatus};
 use parking_lot::Mutex;
-use std::ops::{Bound, Deref, RangeBounds};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once, OnceLock, Weak};
 use std::thread::spawn;
-use tokio::sync::{broadcast, mpsc, oneshot};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
-use tracing::{debug, error, info, warn};
-use crate::utils::NonClonable;
+use tracing::{debug, error};
 
 pub type PrimitiveResult<T> = std::result::Result<T, PrimitiveError>;
 
@@ -148,13 +147,11 @@ impl PduPrimitive {
     /// Returns the D-PDU communication primitive handle.
     pub fn get_cop_handle(&self) -> PrimitiveResult<PduCopHandle> {
         self.assert_started()?;
-        Ok(
-            self
-                .h_cop
-                .get()
-                .expect("internal error: primitive was reported as started but has no primitive handle")
-                .to_owned()
-        )
+        Ok(self
+            .h_cop
+            .get()
+            .expect("internal error: primitive was reported as started but has no primitive handle")
+            .to_owned())
     }
 
     /// Returns the parameters used to create this primitive, if available.
@@ -266,13 +263,13 @@ impl PduPrimitive {
             self.cop_type,
             &self.data,
             self.get_params(),
-            Some(self.unique_tag)
+            Some(self.unique_tag),
         ) {
             Ok(v) => v,
             Err(err) => {
-                let _ = self
-                    .primitive_event_tx
-                    .send(PrimitiveEvent::StartFailed(GeneralError::ApiError(err.clone())));
+                let _ = self.primitive_event_tx.send(PrimitiveEvent::StartFailed(
+                    GeneralError::ApiError(err.clone()),
+                ));
                 return Err(err)?;
             }
         };
@@ -301,14 +298,17 @@ impl PduPrimitive {
 
         match self.worker.get() {
             Some(worker) => {
-                let h_cop = match worker.pdu_start_com_primitive(
-                    self.h_mod,
-                    self.h_cll,
-                    self.cop_type,
-                    self.data.clone(),
-                    self.get_params().cloned(),
-                    Some(self.unique_tag)
-                ).await {
+                let h_cop = match worker
+                    .pdu_start_com_primitive(
+                        self.h_mod,
+                        self.h_cll,
+                        self.cop_type,
+                        self.data.clone(),
+                        self.get_params().cloned(),
+                        Some(self.unique_tag),
+                    )
+                    .await
+                {
                     Ok(v) => v,
                     Err(err) => {
                         let _ = self
@@ -325,7 +325,7 @@ impl PduPrimitive {
                     .expect("internal error: primitive was reported as not started but already has primitive handle");
 
                 Ok(())
-            },
+            }
             None => {
                 let me = self.clone_arc();
 
@@ -353,13 +353,13 @@ impl PduPrimitive {
                     if !status.is_alive() {
                         break;
                     }
-                },
+                }
                 PrimitiveEvent::Result(result) => {
                     return Ok(result);
-                },
+                }
                 PrimitiveEvent::Error(error) => {
                     return Err(PrimitiveError::CommunicationError(error));
-                },
+                }
                 _ => {}
             }
         }
@@ -385,13 +385,13 @@ impl PduPrimitive {
                     if !status.is_alive() {
                         break;
                     }
-                },
+                }
                 PrimitiveEvent::Result(result) => {
                     return Ok(result);
-                },
+                }
                 PrimitiveEvent::Error(error) => {
                     return Err(PrimitiveError::CommunicationError(error));
-                },
+                }
                 _ => {}
             }
         }
@@ -422,8 +422,7 @@ impl PduPrimitive {
         let _sync_guard = self.pdu_sync.lock();
         let h_cop = self.get_cop_handle()?;
 
-        self
-            .api
+        self.api
             .pdu_cancel_com_primitive(self.h_mod, self.h_cll, h_cop)?;
 
         Ok(())
@@ -526,7 +525,9 @@ impl PduPrimitive {
     /// only receive events emitted after subscription.
     ///
     /// Returns an error if the primitive is in an invalid state or has failed.
-    pub fn get_primitive_event_receiver(&self) -> PrimitiveResult<broadcast::Receiver<PrimitiveEvent>> {
+    pub fn get_primitive_event_receiver(
+        &self,
+    ) -> PrimitiveResult<broadcast::Receiver<PrimitiveEvent>> {
         self.assert_error()?;
         self.assert_dead()?;
 
@@ -568,7 +569,7 @@ impl PduPrimitive {
                 &dead_flag,
                 &mut primitive_event_tx,
                 &error_event_store,
-                &primitive_status_store
+                &primitive_status_store,
             ) {
                 break;
             }
@@ -604,7 +605,7 @@ impl PduPrimitive {
                 &dead_flag,
                 &mut primitive_event_tx,
                 &error_event_store,
-                &primitive_status_store
+                &primitive_status_store,
             ) {
                 break;
             }
@@ -655,17 +656,17 @@ impl PduPrimitive {
 
                 primitive_status_store.set(status);
                 send_event(PrimitiveEvent::Status(status));
-            },
+            }
             PduEventData::Error(error) => {
                 error_event_store
                     .set(error.clone())
                     .expect("internal error: error event has been already stored");
 
                 send_event(PrimitiveEvent::Error(error));
-            },
+            }
             PduEventData::Result(result) => {
                 send_event(PrimitiveEvent::Result(result));
-            },
+            }
             PduEventData::Info(info) => {
                 // This indicates an internal error. `PduInfoEvent`s are never expected
                 // for communication primitives.
@@ -967,7 +968,7 @@ impl MaskData {
     pub fn empty() -> Self {
         Self {
             mask: vec![],
-            pattern: vec![]
+            pattern: vec![],
         }
     }
 
@@ -1013,10 +1014,8 @@ impl SendCycles {
     /// fixed number of cycles.
     pub fn to_i32(&self) -> i32 {
         match self {
-            SendCycles::Normal(v) => {
-                i32::try_from(*v)
-                    .unwrap_or_else(|_| panic!("SendCycles value is too large for i32: {v}"))
-            }
+            SendCycles::Normal(v) => i32::try_from(*v)
+                .unwrap_or_else(|_| panic!("SendCycles value is too large for i32: {v}")),
             SendCycles::Infinite => -1,
         }
     }
@@ -1050,10 +1049,8 @@ impl ReceiveCycles {
     /// - `-2` for multiple response mode.
     pub fn to_i32(&self) -> i32 {
         match self {
-            ReceiveCycles::Normal(v) => {
-                i32::try_from(*v)
-                    .unwrap_or_else(|_| panic!("ReceiveCycles value is too large for i32: {v}"))
-            }
+            ReceiveCycles::Normal(v) => i32::try_from(*v)
+                .unwrap_or_else(|_| panic!("ReceiveCycles value is too large for i32: {v}")),
             ReceiveCycles::Infinite => -1,
             ReceiveCycles::Multiple => -2,
         }
@@ -1107,7 +1104,7 @@ pub enum PrimitiveEvent {
     ///
     /// This event contains detailed information about failures that are not
     /// tied to a specific primitive result or execution state.
-    StartFailed(GeneralError)
+    StartFailed(GeneralError),
 }
 
 /// High-level lifecycle status of a D-PDU communication primitive.
@@ -1154,7 +1151,7 @@ impl PrimitiveStatus {
     pub fn is_alive(&self) -> bool {
         match self {
             Self::Idle | Self::Executing | Self::Waiting | Self::Created => true,
-            Self::Finished | Self::Cancelled => false
+            Self::Finished | Self::Cancelled => false,
         }
     }
 }
@@ -1200,7 +1197,7 @@ impl TryFrom<PduStatus> for PrimitiveStatus {
             PduStatus::CopstWaiting => Ok(Self::Waiting),
             PduStatus::CopstCancelled => Ok(Self::Cancelled),
             PduStatus::CopstFinished => Ok(Self::Finished),
-            status => Err(InvalidPrimitiveStatusError(status))
+            status => Err(InvalidPrimitiveStatusError(status)),
         }
     }
 }

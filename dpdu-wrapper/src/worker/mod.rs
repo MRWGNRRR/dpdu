@@ -8,8 +8,6 @@ pub use rpc::Response;
 use std::sync::{Arc, Weak};
 use std::thread::spawn;
 use tokio::sync::oneshot;
-use tokio::sync::oneshot::error::RecvError;
-use tokio::task::spawn_blocking;
 use tracing::{error, info, warn};
 
 pub type WorkerResult<T> = std::result::Result<T, WorkerError>;
@@ -217,12 +215,10 @@ impl Drop for PduAsyncWorker {
             let (tx, rx) = oneshot::channel();
 
             match query_tx.try_send((Query::PduDestruct, Some(tx))) {
-                Ok(_) => {
-                    match rx.await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            error!("Query response channel has been unexpectedly closed: {err}");
-                        }
+                Ok(_) => match rx.await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Query response channel has been unexpectedly closed: {err}");
                     }
                 },
                 Err(err) => {

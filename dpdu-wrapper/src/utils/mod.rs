@@ -1,8 +1,9 @@
+pub mod can;
 pub mod module_description;
 pub mod root_file;
-pub mod can;
 
 use crate::types::PduUniqueRespIdentifier;
+use cfg_if::cfg_if;
 use rand::RngExt;
 use std::ffi::{CStr, c_char, c_void};
 use std::fs::{File, OpenOptions};
@@ -13,9 +14,8 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::ptr;
 use std::ptr::NonNull;
-use cfg_if::cfg_if;
-use winreg::enums::HKEY_LOCAL_MACHINE;
 use winreg::RegKey;
+use winreg::enums::HKEY_LOCAL_MACHINE;
 
 /// Converts a nullable C string to `Option<String>`.
 ///

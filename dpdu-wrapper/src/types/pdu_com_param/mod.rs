@@ -51,7 +51,7 @@ impl Display for PduComParam {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.short_name.get() {
             Some(v) => write!(f, "{v} - #{}", self.id),
-            None => write!(f, "#{}", self.id)
+            None => write!(f, "#{}", self.id),
         }
     }
 }

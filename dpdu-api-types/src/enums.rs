@@ -13,9 +13,7 @@ macro_rules! impl_as_str {
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Item type values
 pub enum PduIt {
     /// IOCTL UNUM32
@@ -65,9 +63,7 @@ impl_as_str!(PduIt);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Communication primitive (ComParam) type
 pub enum PduCopt {
     /// Start communication with an ECU
@@ -92,9 +88,7 @@ impl_as_str!(PduCopt);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Object type
 pub enum PduObjt {
     /// Protocol object
@@ -118,9 +112,7 @@ impl_as_str!(PduObjt);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Status codes
 pub enum PduStatus {
     /// Communication parameter has not been acted upon yet
@@ -156,9 +148,7 @@ impl_as_str!(PduStatus);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Information events
 pub enum PduInfo {
     /// New vehicle communication list is available
@@ -176,9 +166,7 @@ impl_as_str!(PduInfo);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Event callback
 pub enum PduEvtData {
     /// There is event data available to read by the application
@@ -194,9 +182,7 @@ impl_as_str!(PduEvtData);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Filter type
 pub enum PduFilter {
     /// Matched messages go into the receive queue
@@ -216,9 +202,7 @@ impl_as_str!(PduFilter);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// IOCTL queue mode
 pub enum PduQueueMode {
     /// Attempt to allocate memory for every event coming in to the receive queue. This queue size can keep
@@ -239,15 +223,7 @@ impl_as_str!(PduQueueMode);
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
 #[cfg_attr(feature = "thiserror", derive(thiserror::Error))]
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Function return values
 pub enum PduError {
     /// No Error (Function call OK)
@@ -263,7 +239,10 @@ pub enum PduError {
     Reserved1 = 0x00000010,
 
     /// Communication failed between host and MVCI
-    #[cfg_attr(feature = "thiserror", error("Communication failed between host and MVCI"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Communication failed between host and MVCI")
+    )]
     CommPcToVciFailed = 0x00000011,
 
     /// PDU API has not yet been constructed
@@ -271,7 +250,10 @@ pub enum PduError {
     PduApiNotConstructed = 0x00000020,
 
     /// PDU Destruct was not called before another PDU Construct
-    #[cfg_attr(feature = "thiserror", error("PDU Destruct was not called before another PDU Construct"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("PDU Destruct was not called before another PDU Construct")
+    )]
     SharingViolation = 0x00000021,
 
     /// Resource is already in use
@@ -287,15 +269,24 @@ pub enum PduError {
     ResourceError = 0x00000032,
 
     /// ComLogicalLink cannot be offline and perform the requested action
-    #[cfg_attr(feature = "thiserror", error("ComLogicalLink cannot be offline and perform the requested action"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("ComLogicalLink cannot be offline and perform the requested action")
+    )]
     CllNotConnected = 0x00000040,
 
     /// ComLogicalLink must be started to perform the requested action
-    #[cfg_attr(feature = "thiserror", error("ComLogicalLink must be started to perform the requested action"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("ComLogicalLink must be started to perform the requested action")
+    )]
     CllNotStarted = 0x00000041,
 
     /// A parameter parsed into the function was invalid
-    #[cfg_attr(feature = "thiserror", error("A parameter parsed into the function was invalid"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("A parameter parsed into the function was invalid")
+    )]
     InvalidParameters = 0x00000050,
 
     /// A handle provided was invalid
@@ -311,11 +302,19 @@ pub enum PduError {
     IdNotSupported = 0x00000062,
 
     /// Communication parameter was unsupported
-    #[cfg_attr(feature = "thiserror", error("Communication parameter was unsupported"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Communication parameter was unsupported")
+    )]
     ComParamNotSupported = 0x00000063,
 
     /// Physical communication parameter cannot be changed as it is locked by another LogicalLink
-    #[cfg_attr(feature = "thiserror", error("Physical communication parameter cannot be changed as it is locked by another LogicalLink"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error(
+            "Physical communication parameter cannot be changed as it is locked by another LogicalLink"
+        )
+    )]
     ComParamLocked = 0x00000064,
 
     /// Transmit queue is full
@@ -327,15 +326,24 @@ pub enum PduError {
     EventQueueEmpty = 0x00000071,
 
     /// IOCTL - Voltage value supplied is unsupported by the MVCI module
-    #[cfg_attr(feature = "thiserror", error("IOCTL - Voltage value supplied is unsupported by the MVCI module"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("IOCTL - Voltage value supplied is unsupported by the MVCI module")
+    )]
     VoltageNotSupported = 0x00000080,
 
     /// IOCTL - Pin or resource is not supported by the MVCI module
-    #[cfg_attr(feature = "thiserror", error("IOCTL - Pin or resource is not supported by the MVCI module"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("IOCTL - Pin or resource is not supported by the MVCI module")
+    )]
     MuxRscNotSupported = 0x00000081,
 
     /// Cable attached to MVCI module is unknown
-    #[cfg_attr(feature = "thiserror", error("Cable attached to MVCI module is unknown"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Cable attached to MVCI module is unknown")
+    )]
     CableUnknown = 0x00000082,
 
     /// No cable attached to the MVCI module
@@ -347,7 +355,10 @@ pub enum PduError {
     CllConnected = 0x00000084,
 
     /// Physical Com parameters cannot be changes as a temporary one
-    #[cfg_attr(feature = "thiserror", error("Physical Com parameters cannot be changes as a temporary one"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Physical Com parameters cannot be changes as a temporary one")
+    )]
     TempParamNotAllowed = 0x00000090,
 
     /// Resource is already locked
@@ -355,7 +366,10 @@ pub enum PduError {
     RscLocked = 0x000000A0,
 
     /// Resource is already locked by another ComLogicalLink
-    #[cfg_attr(feature = "thiserror", error("Resource is already locked by another ComLogicalLink"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Resource is already locked by another ComLogicalLink")
+    )]
     RscLockedByAnotherCll = 0x000000A1,
 
     /// Resource is already unlocked
@@ -375,7 +389,10 @@ pub enum PduError {
     ModuleFwOutOfDate = 0x000000A5,
 
     /// Requested pin is not routed by the MVCI's cable
-    #[cfg_attr(feature = "thiserror", error("Requested pin is not routed by the MVCI's cable"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("Requested pin is not routed by the MVCI's cable")
+    )]
     PinNotConnected = 0x000000A6,
 
     /// IP protocol not supported
@@ -383,47 +400,80 @@ pub enum PduError {
     IpProtocolNotSupported = 0x000000B0,
 
     /// DoIP Routing activation failed (Generic failure)
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed (Generic failure)"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed (Generic failure)")
+    )]
     DoIpRoutingActivationFailed = 0x000000B1,
 
     /// DoIP Routing activation failed - missing / wrong authentication
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - missing / wrong authentication"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - missing / wrong authentication")
+    )]
     DoIpRoutingActivationAuthFailed = 0x000000B2,
-    
+
     /// DoIP Logical address is defined multiple times so it is ambiguous
-    #[cfg_attr(feature = "thiserror", error("DoIP Logical address is defined multiple times so it is ambiguous"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Logical address is defined multiple times so it is ambiguous")
+    )]
     DoIpAmbiguousLogicalAddress = 0x000000B3,
 
     /// DoIP Routing activation failed - Unknown or invalid source address
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - Unknown or invalid source address"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - Unknown or invalid source address")
+    )]
     DoIpRoutineActivationInvalidSrcAddress = 0x000000B4,
 
     /// DoIP Routing activation failed - No more free sockets available
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - No more free sockets available"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - No more free sockets available")
+    )]
     DoIpRoutingActivationNoDataSocketAvailable = 0x000000B5,
 
     /// DoIP Routing activation failed - The source address changed
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - The source address changed"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - The source address changed")
+    )]
     DoIpRoutineActivationSourceAddressChanged = 0x000000B6,
 
     /// DoIP Routing activation failed - Source address already in use
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - Source address already in use"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - Source address already in use")
+    )]
     DoIpRoutingActivationSourceAddressInUse = 0x000000B7,
 
     /// DoIP Routing activation failed - Rejected confirmation
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - Rejected confirmation"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - Rejected confirmation")
+    )]
     DoIpRoutineActivationConfirmationRejected = 0x000000B8,
 
     /// DoIP Routing activation failed - Requested activation type was unsupported
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - Requested activation type was unsupported"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - Requested activation type was unsupported")
+    )]
     DoIpRoutineActivationTypeUnsupported = 0x000000B9,
 
     /// DoIP Routing activation failed - Response code was unknown
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - Response code was unknown"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - Response code was unknown")
+    )]
     DoIpRoutineActivationResponseCodeUnknown = 0x000000BA,
 
     /// DoIP Routing activation failed - Timeout waiting for activation response
-    #[cfg_attr(feature = "thiserror", error("DoIP Routing activation failed - Timeout waiting for activation response"))]
+    #[cfg_attr(
+        feature = "thiserror",
+        error("DoIP Routing activation failed - Timeout waiting for activation response")
+    )]
     DoIpRoutingActivationResponseTimeout = 0x000000BB,
 
     /// DoIP general timeout
@@ -444,9 +494,7 @@ impl PduError {
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Function error events (Used in asynchronous situations)
 pub enum PduErrorEvt {
     /// No error
@@ -479,9 +527,7 @@ impl_as_str!(PduErrorEvt);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// ComParam data type
 pub enum PduPt {
     /// Unsigned 8 bit
@@ -510,9 +556,7 @@ impl_as_str!(PduPt);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// ComParam data class
 pub enum PduPc {
     /// Message timing
@@ -537,9 +581,7 @@ impl_as_str!(PduPc);
 #[repr(u32)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// ComParam struct type
 pub enum PduCpst {
     /// Session timing
@@ -554,9 +596,7 @@ impl_as_str!(PduCpst);
 #[repr(u8)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Vehicle preselection mode
 pub enum VidPreselectMode {
     /// No preselection
@@ -573,9 +613,7 @@ impl_as_str!(VidPreselectMode);
 #[repr(u8)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// DoIP Combination mode
 pub enum CombinationMode {
     /// No combination
@@ -594,9 +632,7 @@ impl_as_str!(CombinationMode);
 #[repr(u8)]
 #[cfg_attr(feature = "num_enum", derive(num_enum::TryFromPrimitive))]
 #[cfg_attr(feature = "num_enum", derive(strum::AsRefStr))]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// Timing set types used by [ParamStructAccessTiming]
 pub enum TimingSet {
     /// Default timing set
@@ -642,7 +678,7 @@ impl<'de> serde::Deserialize<'de> for TimingSet {
 
         impl<'de> serde::de::Visitor<'de> for TimingSetVisitor {
             type Value = TimingSet;
-            
+
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("TimingSet as u8 or string")
             }
@@ -667,7 +703,7 @@ impl<'de> serde::Deserialize<'de> for TimingSet {
             {
                 match value {
                     "Default" | "default" => Ok(TimingSet::Default),
-                    "OverrideReceived" | "override_received"  => Ok(TimingSet::OverrideReceived),
+                    "OverrideReceived" | "override_received" => Ok(TimingSet::OverrideReceived),
                     "OverrideTester" | "override_tester" => Ok(TimingSet::OverrideTester),
                     "Normal" | "normal" => Ok(TimingSet::Normal),
                     "Extended" | "extended" => Ok(TimingSet::Extended),

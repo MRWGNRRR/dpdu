@@ -554,7 +554,6 @@ pub struct ParamStructSessionTiming {
 pub struct ParamStructAccessTiming {
     /// 0.5ms resolution - Minimum time between tester request and ECU response
     #[cfg_attr(feature = "serde", serde(alias = "P2Min"))]
-
     pub p2_min: u8,
 
     /// 0.5ms resolution - Maximum time between tester request and ECU response

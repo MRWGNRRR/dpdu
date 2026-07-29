@@ -1,7 +1,7 @@
 use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, PduCllData};
 use crate::types::pdu_com_param::PduComParam;
 use crate::types::pdu_com_param::table::PduComParamTable;
-use crate::types::pdu_com_primitive::{PduPrimitiveParams};
+use crate::types::pdu_com_primitive::PduPrimitiveParams;
 use crate::types::pdu_error::{PduErrorData, PduLastErrorTarget};
 use crate::types::pdu_event::{PduEvent, PduEventTarget};
 use crate::types::pdu_io_ctl::{PduIoCtlCommand, PduIoCtlData, PduIoCtlTarget};

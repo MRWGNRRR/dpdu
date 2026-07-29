@@ -13,11 +13,7 @@ impl StandardId {
     ///
     /// This will return `None` if `raw` is out of range of an 11-bit integer (`> 0x7FF`).
     pub const fn new(raw: u16) -> Option<Self> {
-        if raw <= 0x7FF {
-            Some(Self(raw))
-        } else {
-            None
-        }
+        if raw <= 0x7FF { Some(Self(raw)) } else { None }
     }
 
     /// Creates a new `StandardId` without checking if it is inside the valid range.

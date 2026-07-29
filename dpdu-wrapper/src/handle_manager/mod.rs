@@ -6,12 +6,11 @@ use crate::types::pdu_vci::PduVci;
 use crate::types::{PduModuleHandle, PduUniqueApiTag, PduUniqueCllTag, PduUniqueCopTag};
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tracing::warn;
 
 static MGR: LazyLock<Arc<PduHandleManager>> = LazyLock::new(|| PduHandleManager::new());
@@ -68,7 +67,7 @@ impl PduHandleManager {
 
         me
     }
-    
+
     pub(crate) fn register_api(api: &Arc<PduApi>, tx: mpsc::WeakUnboundedSender<PduEvent>) {
         let mut apis = MGR.apis.write();
         apis.insert(
@@ -93,7 +92,10 @@ impl PduHandleManager {
         unique_id: PduUniqueApiTag,
     ) -> Option<mpsc::UnboundedSender<PduEvent>> {
         let apis = MGR.apis.read();
-        apis.get(&unique_id)?.event_tx.get().and_then(mpsc::WeakUnboundedSender::upgrade)
+        apis.get(&unique_id)?
+            .event_tx
+            .get()
+            .and_then(mpsc::WeakUnboundedSender::upgrade)
     }
 
     /// Returns the only one D-PDU API that is registered.
@@ -118,23 +120,19 @@ impl PduHandleManager {
     ) {
         let mut mods = MGR.mods.write();
 
-        let module = mods
-            .entry((api_tag, h_mod))
-            .or_insert(HandleContainer {
-                reference: Default::default(),
-                event_tx: Default::default(),
-                created_at: Instant::now(),
-            });
+        let module = mods.entry((api_tag, h_mod)).or_insert(HandleContainer {
+            reference: Default::default(),
+            event_tx: Default::default(),
+            created_at: Instant::now(),
+        });
 
-        module
-            .reference
-            .set(vci)
-            .expect(&format!("internal error: reference already registered for module handle {h_mod}"));
+        module.reference.set(vci).expect(&format!(
+            "internal error: reference already registered for module handle {h_mod}"
+        ));
 
-        module
-            .event_tx
-            .set(event_tx)
-            .expect(&format!("internal error: event_tx already register for module handle {h_mod}"));
+        module.event_tx.set(event_tx).expect(&format!(
+            "internal error: event_tx already register for module handle {h_mod}"
+        ));
     }
 
     pub(crate) fn lookup_module_reference(
@@ -167,13 +165,11 @@ impl PduHandleManager {
     ) {
         let mut clls = MGR.clls.write();
 
-        let container = clls
-            .entry((api_tag, cll_tag))
-            .or_insert(HandleContainer {
-                reference: Default::default(),
-                event_tx: Default::default(),
-                created_at: Instant::now(),
-            });
+        let container = clls.entry((api_tag, cll_tag)).or_insert(HandleContainer {
+            reference: Default::default(),
+            event_tx: Default::default(),
+            created_at: Instant::now(),
+        });
 
         if let Some(tx) = tx {
             container.event_tx.set(tx).expect(&format!(
@@ -329,7 +325,7 @@ impl PduHandleManager {
 #[derive(Debug)]
 pub(crate) struct HandleContainer<T> {
     reference: OnceLock<Weak<T>>,
-    
+
     event_tx: OnceLock<mpsc::WeakUnboundedSender<PduEvent>>,
 
     created_at: Instant,

@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use std::time::Instant;
 use tracing::{error, info, warn};
 
-use crate::utils::{get_bomless_file_reader, get_winreg_arch_flags, HKEY_LM_REG_KEY};
+use crate::utils::{HKEY_LM_REG_KEY, get_bomless_file_reader, get_winreg_arch_flags};
 pub use semver::VersionReq;
 
 #[derive(Debug, thiserror::Error)]
@@ -153,9 +153,6 @@ impl PduRootFile {
     /// Searches for a path to the D-PDU API root file via the Windows registry.
     pub fn lookup_root_file_path_in_windows_registry() -> Result<Option<PathBuf>, PduRootFileError>
     {
-        use winreg::RegKey;
-        use winreg::enums::{self, HKEY_LOCAL_MACHINE};
-
         const WINREG_PATH: &'static str = "SOFTWARE\\D-PDU API";
         const WINREG_KEY: &'static str = "Root File";
 

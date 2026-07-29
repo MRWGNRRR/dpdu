@@ -155,7 +155,7 @@ where
 
     pub fn add_set<I>(&mut self, id: PduUniqueRespIdentifier, set: I) -> &mut Self
     where
-        I: IntoIterator<Item = T>
+        I: IntoIterator<Item = T>,
     {
         self.entry(id).or_default().extend(set);
         self
@@ -163,7 +163,7 @@ where
 
     pub fn add_set_with_ecu_name<I>(&mut self, name: &str, set: I) -> &mut Self
     where
-        I: IntoIterator<Item = T>
+        I: IntoIterator<Item = T>,
     {
         self.entry(ecu_name_to_unique_resp_id(name))
             .or_default()

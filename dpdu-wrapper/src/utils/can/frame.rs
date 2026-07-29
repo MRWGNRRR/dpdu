@@ -52,20 +52,26 @@ pub struct Header {
 impl Header {
     const FLAG_RTR: u8 = 1 << 0;
     const FLAG_FDCAN: u8 = 1 << 1;
-    const FLAG_BRS: u8 = 1<< 2;
+    const FLAG_BRS: u8 = 1 << 2;
 
     /// Create new CAN Header
     pub fn new(id: Id, len: u8, rtr: bool) -> Header {
         let mut flags = 0u8;
-        if rtr { flags |= Self::FLAG_RTR; }
+        if rtr {
+            flags |= Self::FLAG_RTR;
+        }
         Header { id, len, flags }
     }
 
     /// Create new CAN FD Header
     pub fn new_fd(id: Id, len: u8, rtr: bool, brs: bool) -> Header {
         let mut flags = Self::FLAG_FDCAN;
-        if rtr { flags |= Self::FLAG_RTR; }
-        if brs { flags |= Self::FLAG_BRS; }
+        if rtr {
+            flags |= Self::FLAG_RTR;
+        }
+        if brs {
+            flags |= Self::FLAG_BRS;
+        }
         Header { id, len, flags }
     }
 
@@ -154,7 +160,7 @@ impl ClassicData {
 #[derive(Debug, Clone)]
 pub struct ClassicFrame {
     pub header: Header,
-    pub data: ClassicData
+    pub data: ClassicData,
 }
 
 impl ClassicFrame {
@@ -174,7 +180,10 @@ impl ClassicFrame {
     /// Create new extended frame
     pub fn new_extended(raw_id: u32, raw_data: &[u8]) -> Result<Self, FrameCreateError> {
         if let Some(id) = ExtendedId::new(raw_id) {
-            Self::new(Header::new(id.into(), raw_data.len() as u8, false), raw_data)
+            Self::new(
+                Header::new(id.into(), raw_data.len() as u8, false),
+                raw_data,
+            )
         } else {
             Err(FrameCreateError::InvalidCanId)
         }
@@ -183,7 +192,10 @@ impl ClassicFrame {
     /// Create new standard frame
     pub fn new_standard(raw_id: u16, raw_data: &[u8]) -> Result<Self, FrameCreateError> {
         if let Some(id) = StandardId::new(raw_id) {
-            Self::new(Header::new(id.into(), raw_data.len() as u8, false), raw_data)
+            Self::new(
+                Header::new(id.into(), raw_data.len() as u8, false),
+                raw_data,
+            )
         } else {
             Err(FrameCreateError::InvalidCanId)
         }
@@ -305,7 +317,10 @@ impl FdFrame {
     /// Create new extended frame
     pub fn new_extended(raw_id: u32, raw_data: &[u8]) -> Result<Self, FrameCreateError> {
         if let Some(id) = ExtendedId::new(raw_id) {
-            Self::new(Header::new_fd(id.into(), raw_data.len() as u8, false, true), raw_data)
+            Self::new(
+                Header::new_fd(id.into(), raw_data.len() as u8, false, true),
+                raw_data,
+            )
         } else {
             Err(FrameCreateError::InvalidCanId)
         }
@@ -314,7 +329,10 @@ impl FdFrame {
     /// Create new standard frame
     pub fn new_standard(raw_id: u16, raw_data: &[u8]) -> Result<Self, FrameCreateError> {
         if let Some(id) = StandardId::new(raw_id) {
-            Self::new(Header::new_fd(id.into(), raw_data.len() as u8, false, true), raw_data)
+            Self::new(
+                Header::new_fd(id.into(), raw_data.len() as u8, false, true),
+                raw_data,
+            )
         } else {
             Err(FrameCreateError::InvalidCanId)
         }
@@ -397,7 +415,10 @@ impl CanFrame for ClassicFrame {
 
 impl CanFrame for FdFrame {
     fn new(id: impl Into<Id>, raw_data: &[u8]) -> Option<Self> {
-        match FdFrame::new(Header::new_fd(id.into(), raw_data.len() as u8, false, true), raw_data) {
+        match FdFrame::new(
+            Header::new_fd(id.into(), raw_data.len() as u8, false, true),
+            raw_data,
+        ) {
             Ok(frame) => Some(frame),
             Err(_) => None,
         }
@@ -442,21 +463,21 @@ impl CanFrame for FdFrame {
 #[derive(Debug, Clone)]
 pub enum AbstractCanFrame {
     Classic(ClassicFrame),
-    Fd(FdFrame)
+    Fd(FdFrame),
 }
 
 impl AbstractCanFrame {
     pub fn as_classic(&self) -> Option<&ClassicFrame> {
         match self {
             Self::Classic(frame) => Some(frame),
-            _ => None
+            _ => None,
         }
     }
 
     pub fn as_fd(&self) -> Option<&FdFrame> {
         match self {
             Self::Fd(frame) => Some(frame),
-            _ => None
+            _ => None,
         }
     }
 
@@ -481,7 +502,7 @@ impl AbstractCanFrame {
             (
                 u32::from_be_bytes([raw_data[1], raw_data[2], raw_data[3], raw_data[4]]),
                 Some(dlc),
-                &raw_data[5..]
+                &raw_data[5..],
             )
         } else {
             if raw_data.len() < 4 {
@@ -491,7 +512,7 @@ impl AbstractCanFrame {
             (
                 u32::from_be_bytes([raw_data[0], raw_data[1], raw_data[2], raw_data[3]]),
                 None,
-                &raw_data[4..]
+                &raw_data[4..],
             )
         };
 
@@ -504,8 +525,8 @@ impl AbstractCanFrame {
         if let Some(dlc) = rtr_dlc {
             return Some(Self::Classic(
                 ClassicFrame::new_remote(id, dlc as _)
-                    .expect("internal error: invalid DLC of RTR frame"))
-            );
+                    .expect("internal error: invalid DLC of RTR frame"),
+            ));
         }
 
         ClassicFrame::new_data(id, data).ok().map(|v| {
@@ -528,35 +549,35 @@ impl CanFrame for AbstractCanFrame {
     fn is_extended(&self) -> bool {
         match self {
             Self::Classic(frame) => frame.is_extended(),
-            Self::Fd(frame) => frame.is_extended()
+            Self::Fd(frame) => frame.is_extended(),
         }
     }
 
     fn is_remote_frame(&self) -> bool {
         match self {
             Self::Classic(frame) => frame.is_remote_frame(),
-            Self::Fd(frame) => frame.is_remote_frame()
+            Self::Fd(frame) => frame.is_remote_frame(),
         }
     }
 
     fn id(&self) -> Id {
         match self {
             Self::Classic(frame) => frame.header.id,
-            Self::Fd(frame) => frame.header.id
+            Self::Fd(frame) => frame.header.id,
         }
     }
 
     fn dlc(&self) -> usize {
         match self {
             Self::Classic(frame) => frame.header.len as _,
-            Self::Fd(frame) => frame.header.len as _
+            Self::Fd(frame) => frame.header.len as _,
         }
     }
 
     fn data(&self) -> &[u8] {
         match self {
             Self::Classic(frame) => frame.data(),
-            Self::Fd(frame) => frame.data()
+            Self::Fd(frame) => frame.data(),
         }
     }
 }

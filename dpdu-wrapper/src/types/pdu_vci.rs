@@ -9,7 +9,7 @@ use crate::types::pdu_event::{PduEvent, PduEventTarget, StopReceive};
 use crate::types::pdu_module::PduModuleData;
 use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
 use crate::types::{PduModuleHandle, PduUniqueCllTag};
-use crate::utils::{random_non_zero_usize, NonClonable};
+use crate::utils::{NonClonable, random_non_zero_usize};
 use crate::worker::{PduAsyncWorker, Query};
 use dpdu_api_types::PduStatus;
 use parking_lot::Mutex;
@@ -20,7 +20,6 @@ use std::thread::spawn;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
 use tracing::{debug, error};
-use crate::types::pdu_com_primitive::PduPrimitive;
 
 pub type VciList = Vec<Arc<PduVci>>;
 
@@ -430,7 +429,8 @@ impl PduVci {
 
                 let (pdu_event_tx, pdu_event_rx) = mpsc::unbounded_channel();
 
-                let (logical_link_event_tx, logical_link_event_rx) = broadcast::channel(events_queue_size);
+                let (logical_link_event_tx, logical_link_event_rx) =
+                    broadcast::channel(events_queue_size);
 
                 // This task is necessary for receiving events from the D-PDU API via the built-in
                 // event callback mechanism, in order to generate the high-level events that
@@ -553,8 +553,8 @@ impl PduVci {
     }
 
     pub(crate) fn handle_event(
-        event: PduEvent,
-        module_event_tx: &mut broadcast::Sender<()>
+        _event: PduEvent,
+        _module_event_tx: &mut broadcast::Sender<()>,
     ) -> StopReceive {
         // TODO
         false

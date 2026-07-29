@@ -1,11 +1,11 @@
+use neohook::detour_helper;
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::ffi::{CStr, c_void};
 use std::sync::{LazyLock, OnceLock};
-use neohook::detour_helper;
 use tracing::error;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA, LoadLibraryW};
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows::core::{PCSTR, s};
 
 static CALLBACKS: LazyLock<RwLock<HashSet<MessageBoxACallback>>> =
@@ -46,22 +46,21 @@ unsafe extern "system" fn hooked_msg_box_a(
 
 static TRAMPOLINE: OnceLock<MsgBoxAFn> = OnceLock::new();
 
-static DETOUR: LazyLock<Result<(), String>> =
-    LazyLock::new(|| unsafe {
-        let user32dll = LoadLibraryA(s!("user32.dll"))
-            .map_err(|e| format!("LoadLibraryA(user32.dll) error: {}", e.message()))?;
+static DETOUR: LazyLock<Result<(), String>> = LazyLock::new(|| unsafe {
+    let user32dll = LoadLibraryA(s!("user32.dll"))
+        .map_err(|e| format!("LoadLibraryA(user32.dll) error: {}", e.message()))?;
 
-        let fn_ptr = GetProcAddress(user32dll, s!("MessageBoxA"))
-            .map(|v| v as *const c_void)
-            .ok_or_else(|| "unable to take a pointer to the MessageBoxA() function".to_string())?;
+    let fn_ptr = GetProcAddress(user32dll, s!("MessageBoxA"))
+        .map(|v| v as *const c_void)
+        .ok_or_else(|| "unable to take a pointer to the MessageBoxA() function".to_string())?;
 
-        let hook_result = detour_helper!(TRAMPOLINE, fn_ptr, hooked_msg_box_a, MsgBoxAFn)
-            .map_err(|e| format!("detour_helper!(...): {}", e.to_string()))?;
+    let hook_result = detour_helper!(TRAMPOLINE, fn_ptr, hooked_msg_box_a, MsgBoxAFn)
+        .map_err(|e| format!("detour_helper!(...): {}", e.to_string()))?;
 
-        Box::leak(Box::new(hook_result));
+    Box::leak(Box::new(hook_result));
 
-        Ok(())
-    });
+    Ok(())
+});
 
 pub(crate) fn hook_message_box_a() -> bool {
     match DETOUR.as_ref() {

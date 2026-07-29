@@ -3,27 +3,28 @@ use crate::constants::COP_EVENTS_QUEUE_SIZE;
 use crate::error::{GeneralError, GeneralResult};
 use crate::handle_manager::PduHandleManager;
 use crate::types::pdu_com_param::table::{IntoPduComParam, MapTarget, PduComParamTable, SetTarget};
-use crate::types::pdu_com_primitive::{ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PduPrimitiveParams, PrimitiveEvent, PrimitiveStatusStore, ReceiveCycles, ResponseType, SendCycles, TransmitFlags};
-use crate::types::pdu_event::{ErrorEventStore, PduEvent, PduEventData, StopReceive};
+use crate::types::pdu_com_primitive::{
+    ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PduPrimitiveParams,
+    PrimitiveStatusStore, ReceiveCycles, ResponseType, SendCycles, TransmitFlags,
+};
+use crate::types::pdu_event::{ErrorEventStore, PduEvent, StopReceive};
 use crate::types::pdu_resource::{BusSource, ProtocolSource, TargetPin};
 use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
 use crate::types::{PduCllHandle, PduModuleHandle, PduObjectId, PduUniqueCllTag, PduUniqueCopTag};
-use crate::utils::{random_non_zero_usize, NonClonable};
+use crate::utils::can::{CanFrame, RawCanPrimitiveBuilderExt};
+use crate::utils::{NonClonable, random_non_zero_usize};
 use crate::worker::{PduAsyncWorker, Query};
 use dpdu_api_types::{PduCopt, PduError, PduStatus};
-use parking_lot::{Mutex};
+use parking_lot::Mutex;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, Once, OnceLock, Weak};
-use std::sync::atomic::AtomicBool;
 use std::thread::spawn;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
-use tokio::sync::broadcast::error::RecvError;
 use tokio::task::spawn_blocking;
 use tracing::{debug, error};
-use crate::utils::can::{CanFrame, RawCanPrimitiveBuilderExt};
 
 #[derive(Debug)]
 pub struct PduLogicalLink {
@@ -255,13 +256,15 @@ impl PduLogicalLink {
             let error_store = primitive_error_store.clone();
             let status_store = primitive_status_store.clone();
             let primitive_event_tx = primitive_event_tx.clone();
-            move || PduPrimitive::blocking_listen_events(
-                pdu_event_rx,
-                primitive_event_tx,
-                error_store,
-                status_store,
-                dead_flag
-            )
+            move || {
+                PduPrimitive::blocking_listen_events(
+                    pdu_event_rx,
+                    primitive_event_tx,
+                    error_store,
+                    status_store,
+                    dead_flag,
+                )
+            }
         });
 
         let h_mod = self.get_module_handle();
@@ -503,7 +506,7 @@ impl PduLogicalLink {
 
     pub(crate) fn blocking_listen_events(
         mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
-        mut logical_link_event_tx: broadcast::Sender<()>
+        mut logical_link_event_tx: broadcast::Sender<()>,
     ) {
         loop {
             let event = match pdu_event_rx.blocking_recv() {
@@ -522,7 +525,7 @@ impl PduLogicalLink {
 
     pub(crate) async fn listen_events(
         mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
-        mut logical_link_event_tx: broadcast::Sender<()>
+        mut logical_link_event_tx: broadcast::Sender<()>,
     ) {
         loop {
             let event = match pdu_event_rx.recv().await {
@@ -540,8 +543,8 @@ impl PduLogicalLink {
     }
 
     pub(crate) fn handle_event(
-        event: PduEvent,
-        module_event_tx: &mut broadcast::Sender<()>
+        _event: PduEvent,
+        _module_event_tx: &mut broadcast::Sender<()>,
     ) -> StopReceive {
         false
     }
@@ -974,14 +977,12 @@ impl SendRecv {
             send_cycles: SendCycles::Normal(1),
             receive_cycles: ReceiveCycles::Normal(1),
             param_buffer: ComParamBuffer::default(),
-            filters: vec![
-                ExpectedResponse {
-                    response_type: ResponseType::Positive,
-                    acceptance_id: 1,
-                    mask_data: MaskData::empty(),
-                    unique_response_ids: vec![],
-                }
-            ],
+            filters: vec![ExpectedResponse {
+                response_type: ResponseType::Positive,
+                acceptance_id: 1,
+                mask_data: MaskData::empty(),
+                unique_response_ids: vec![],
+            }],
             delay: Duration::from_millis(0),
             events_queue_size: None,
         }
@@ -992,11 +993,11 @@ impl SendRecv {
         SendRecv::new(Some(data)).with_no_receive()
     }
 
-    pub fn with_no_receive(mut self) -> Self {
+    pub fn with_no_receive(self) -> Self {
         self.with_receive_cycles(ReceiveCycles::Normal(0))
     }
 
-    pub fn with_no_send(mut self) -> Self {
+    pub fn with_no_send(self) -> Self {
         self.with_send_cycles(SendCycles::Normal(0))
     }
 
@@ -1022,7 +1023,7 @@ impl SendRecv {
 
     pub fn with_tx_flags_mut<F>(mut self, f: F) -> Self
     where
-        F: Fn(&mut TransmitFlags)
+        F: Fn(&mut TransmitFlags),
     {
         let flags = &mut self.tx_flags;
         f(flags);
@@ -1063,14 +1064,12 @@ impl RawCanPrimitiveBuilderExt for SendRecv {
         Self::new(None)
             .with_no_send()
             .with_receive_cycles(ReceiveCycles::Infinite)
-            .with_filters(vec![
-                ExpectedResponse {
-                    response_type: ResponseType::Positive,
-                    acceptance_id: 1,
-                    mask_data: MaskData::empty(),
-                    unique_response_ids: vec![]
-                }
-            ])
+            .with_filters(vec![ExpectedResponse {
+                response_type: ResponseType::Positive,
+                acceptance_id: 1,
+                mask_data: MaskData::empty(),
+                unique_response_ids: vec![],
+            }])
     }
 
     fn send_only_raw_can(frame: impl CanFrame) -> Self {
@@ -1089,14 +1088,12 @@ impl RawCanPrimitiveBuilderExt for SendRecv {
         Self::send_only_raw_can(frame)
             .with_send_cycles(SendCycles::Normal(1))
             .with_receive_cycles(ReceiveCycles::Normal(1))
-            .with_filters(vec![
-                ExpectedResponse {
-                    response_type: ResponseType::Positive,
-                    acceptance_id: 1,
-                    mask_data: MaskData::empty(),
-                    unique_response_ids: vec![]
-                }
-            ])
+            .with_filters(vec![ExpectedResponse {
+                response_type: ResponseType::Positive,
+                acceptance_id: 1,
+                mask_data: MaskData::empty(),
+                unique_response_ids: vec![],
+            }])
     }
 }
 

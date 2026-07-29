@@ -1,8 +1,8 @@
 use dpdu_api_types::PduError;
 
 mod detours;
-mod vxdiag;
 mod softing;
+mod vxdiag;
 
 pub fn wrap_pdu_call<F>(func: &str, mut f: F) -> PduError
 where

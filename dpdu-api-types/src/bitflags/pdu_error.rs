@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
-use bitflags::bitflags;
 use crate::PduError;
+use bitflags::bitflags;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -94,9 +94,7 @@ impl PduError {
             PduError::DoIpRoutingActivationAuthFailed => {
                 PduErrorFlag::DOIP_ROUTING_ACTIVATION_AUTH_FAILED
             }
-            PduError::DoIpAmbiguousLogicalAddress => {
-                PduErrorFlag::DOIP_AMBIGUOUS_LOGICAL_ADDRESS
-            }
+            PduError::DoIpAmbiguousLogicalAddress => PduErrorFlag::DOIP_AMBIGUOUS_LOGICAL_ADDRESS,
             PduError::DoIpRoutineActivationInvalidSrcAddress => {
                 PduErrorFlag::DOIP_ROUTINE_ACTIVATION_INVALID_SRC_ADDRESS
             }

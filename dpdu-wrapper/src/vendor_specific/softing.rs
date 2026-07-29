@@ -1,9 +1,9 @@
+use crate::utils::{HKEY_LM_REG_KEY, get_winreg_arch_flags};
 use std::fs::copy;
 use std::path::PathBuf;
 use std::sync::Once;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn};
 use winreg::enums;
-use crate::utils::{get_winreg_arch_flags, HKEY_LM_REG_KEY};
 
 /// Creates the missing protocol.dll file required for ISO 11898 RAW protocol support
 /// in Softing EDIC.
@@ -18,16 +18,10 @@ pub fn restore_protocol_dll() {
 
     ONCE.call_once(|| {
         // Softing D-PDU API installer registry branch.
-        try_restore_protocol_dll(
-            "SOFTWARE\\Softing\\D-PDU API",
-            "InstallLocation",
-        );
+        try_restore_protocol_dll("SOFTWARE\\Softing\\D-PDU API", "InstallLocation");
 
         // Softing D-PDU API_Module installer registry branch.
-        try_restore_protocol_dll(
-            "SOFTWARE\\Softing\\D-PDU API_Module",
-            "PDUAPIInstallDir",
-        );
+        try_restore_protocol_dll("SOFTWARE\\Softing\\D-PDU API_Module", "PDUAPIInstallDir");
     });
 }
 
@@ -39,16 +33,15 @@ pub fn restore_protocol_dll() {
 ///
 /// No action is taken if the required directories or files are missing, or if protocol.dll
 /// already exists.
-fn try_restore_protocol_dll(
-    winreg_path: &str,
-    install_dir_key: &str,
-) {
+fn try_restore_protocol_dll(winreg_path: &str, install_dir_key: &str) {
     let Ok(path) = HKEY_LM_REG_KEY
         .open_subkey_with_flags(winreg_path, get_winreg_arch_flags())
-        .inspect_err(|err| debug!(
-            path = winreg_path,
-            "Registry path cannot be opened: {err:?}"
-        ))
+        .inspect_err(|err| {
+            debug!(
+                path = winreg_path,
+                "Registry path cannot be opened: {err:?}"
+            )
+        })
     else {
         return;
     };
@@ -57,25 +50,26 @@ fn try_restore_protocol_dll(
         let full_winreg_path = format!("{winreg_path}\\{version_path}\\Installer");
 
         let Ok(installer) = path
-            .open_subkey_with_flags(
-                format!("{version_path}\\Installer"),
-                enums::KEY_READ,
-            )
-            .inspect_err(|err| debug!(
-                path = full_winreg_path,
-                "Registry path cannot be opened: {err:?}"
-            ))
+            .open_subkey_with_flags(format!("{version_path}\\Installer"), enums::KEY_READ)
+            .inspect_err(|err| {
+                debug!(
+                    path = full_winreg_path,
+                    "Registry path cannot be opened: {err:?}"
+                )
+            })
         else {
             continue;
         };
 
         let Ok(install_directory) = installer
             .get_value::<String, _>(install_dir_key)
-            .inspect_err(|err| debug!(
-                path = full_winreg_path,
-                key = install_dir_key,
-                "Registry value cannot be read: {err:?}"
-            ))
+            .inspect_err(|err| {
+                debug!(
+                    path = full_winreg_path,
+                    key = install_dir_key,
+                    "Registry value cannot be read: {err:?}"
+                )
+            })
             .map(PathBuf::from)
         else {
             continue;
