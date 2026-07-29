@@ -3,6 +3,11 @@ name = "dpdu-wrapper-support"
 version = "0.1.0"
 edition = "2024"
 
+description = "Procedural macro helpers for the dpdu-wrapper crate."
+license = "MIT"
+repository = "https://github.com/MRWGNRRR/dpdu"
+documentation = "https://docs.rs/dpdu-wrapper-support"
+
 [lib]
 proc-macro = true
 

@@ -3,6 +3,11 @@ name = "dpdu-wrapper"
 version = "0.1.0"
 edition = "2024"
 
+description = "High-level Rust wrapper for D-PDU implementations."
+license = "MIT"
+repository = "https://github.com/MRWGNRRR/dpdu"
+documentation = "https://docs.rs/dpdu-wrapper"
+
 [dependencies]
 dpdu-wrapper-support = { version = "0.1.0", path = "../dpdu-wrapper-support" }
 thiserror = { version = "2.0.18" }
