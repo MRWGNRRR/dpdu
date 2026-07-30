@@ -409,6 +409,62 @@ impl PduPrimitive {
         }))?
     }
 
+    /// Blocks the current thread until the primitive execution is finished.
+    ///
+    /// This method waits for primitive events and returns when the primitive
+    /// reaches a terminal state ([`PrimitiveStatus::is_alive()`] returns `false`).
+    ///
+    /// If an error event is received during execution, the method returns
+    /// [`PrimitiveError::CommunicationError`].
+    pub fn blocking_wait_finish(&self) -> PrimitiveResult<()> {
+        self.assert_started()?;
+
+        let mut receiver = self.get_primitive_event_receiver()?;
+        while let Ok(event) = receiver.blocking_recv() {
+            match event {
+                PrimitiveEvent::Status(status) => {
+                    if !status.is_alive() {
+                        break;
+                    }
+                },
+                PrimitiveEvent::Error(error) => {
+                    return Err(PrimitiveError::CommunicationError(error));
+                },
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Asynchronously waits until the primitive execution is finished.
+    ///
+    /// This method waits for primitive events and returns when the primitive
+    /// reaches a terminal state ([`PrimitiveStatus::is_alive()`] returns `false`).
+    ///
+    /// If an error event is received during execution, the method returns
+    /// [`PrimitiveError::CommunicationError`].
+    pub async fn wait_finish(&self) -> PrimitiveResult<()> {
+        self.assert_started()?;
+
+        let mut receiver = self.get_primitive_event_receiver()?;
+        while let Ok(event) = receiver.recv() {
+            match event {
+                PrimitiveEvent::Status(status) => {
+                    if !status.is_alive() {
+                        break;
+                    }
+                },
+                PrimitiveEvent::Error(error) => {
+                    return Err(PrimitiveError::CommunicationError(error));
+                },
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
     /// Cancels the execution of the D-PDU communication primitive.
     ///
     /// This method performs a synchronous D-PDU API call and blocks the current
