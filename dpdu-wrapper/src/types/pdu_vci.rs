@@ -528,12 +528,12 @@ impl PduVci {
     ///
     /// # Returns
     ///
-    /// Returns the battery voltage in volts.
+    /// See [`PduApi::vt_io_ctl_read_vbatt`].
     ///
     /// # See also
     ///
     /// - [`PduVci::get_battery_voltage`] for the asynchronous equivalent.
-    pub fn blocking_get_battery_voltage(&self) -> GeneralResult<f32> {
+    pub fn blocking_get_battery_voltage(&self) -> GeneralResult<Option<f32>> {
         Ok(self.api.vt_io_ctl_read_vbatt(self.module_data.h_mod)?)
     }
 
@@ -545,12 +545,12 @@ impl PduVci {
     ///
     /// # Returns
     ///
-    /// Returns the battery voltage in volts.
+    /// See [`PduApi::vt_io_ctl_read_vbatt`].
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying D-PDU API call fails.
-    pub async fn get_battery_voltage(&self) -> GeneralResult<f32> {
+    pub async fn get_battery_voltage(&self) -> GeneralResult<Option<f32>> {
         let h_mod = self.module_data.h_mod;
 
         let voltage = match self.worker.get() {

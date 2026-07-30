@@ -41,7 +41,7 @@ declare_worker_rpc! {
         => vt_io_ctl_clear_rx_queue(h_mod: PduModuleHandle, h_cll: PduCllHandle) -> (),
 
     VtIoCtlReadVbatt
-        => vt_io_ctl_read_vbatt(h_mod: PduModuleHandle) -> f32,
+        => vt_io_ctl_read_vbatt(h_mod: PduModuleHandle) -> Option<f32>,
 
     VtIoCtlSetProgVoltage
         => vt_io_ctl_set_prog_voltage(h_mod: PduModuleHandle, voltage: f32, pin: u32) -> (),
