@@ -1,6 +1,6 @@
 [package]
 name = "dpdu-wrapper"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 
 description = "High-level Rust wrapper for D-PDU implementations."
