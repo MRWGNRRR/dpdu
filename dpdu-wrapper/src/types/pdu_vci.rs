@@ -521,6 +521,53 @@ impl PduVci {
         }
     }
 
+    /// Reads the current vehicle battery voltage.
+    ///
+    /// This method performs a synchronous `VT_IOCTL_READ_VBATT` request and blocks
+    /// the calling thread until the VCI returns the measured battery voltage.
+    ///
+    /// # Returns
+    ///
+    /// Returns the battery voltage in volts.
+    ///
+    /// # See also
+    ///
+    /// - [`PduVci::get_battery_voltage`] for the asynchronous equivalent.
+    pub fn blocking_get_battery_voltage(&self) -> GeneralResult<f32> {
+        Ok(self.api.vt_io_ctl_read_vbatt(self.module_data.h_mod)?)
+    }
+
+    /// Asynchronously reads the current vehicle battery voltage.
+    ///
+    /// If a dedicated worker thread is available, the request is executed on that
+    /// worker. Otherwise, the blocking D-PDU API call is executed using
+    /// `tokio::task::spawn_blocking` to avoid blocking the async runtime.
+    ///
+    /// # Returns
+    ///
+    /// Returns the battery voltage in volts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying D-PDU API call fails.
+    pub async fn get_battery_voltage(&self) -> GeneralResult<f32> {
+        let h_mod = self.module_data.h_mod;
+
+        let voltage = match self.worker.get() {
+            Some(worker) => worker.vt_io_ctl_read_vbatt(h_mod).await?,
+            None => {
+                let me = self.take_me_expect();
+                let thread = move || me.api.vt_io_ctl_read_vbatt(h_mod);
+
+                spawn_blocking(thread).await.expect(
+                    "internal error: PduVci::blocking_get_battery_voltage task panicked"
+                )?
+            }
+        };
+
+        Ok(voltage)
+    }
+
     pub(crate) fn blocking_listen_events(
         mut pdu_event_rx: mpsc::UnboundedReceiver<PduEvent>,
         mut module_event_tx: broadcast::Sender<()>,
