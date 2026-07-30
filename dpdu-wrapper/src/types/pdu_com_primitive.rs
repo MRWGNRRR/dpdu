@@ -448,7 +448,7 @@ impl PduPrimitive {
         self.assert_started()?;
 
         let mut receiver = self.get_primitive_event_receiver()?;
-        while let Ok(event) = receiver.recv() {
+        while let Ok(event) = receiver.recv().await {
             match event {
                 PrimitiveEvent::Status(status) => {
                     if !status.is_alive() {
