@@ -65,6 +65,13 @@ pub struct PduVci {
     pub(crate) pdu_sync: Mutex<()>,
 }
 
+impl PartialEq for PduVci {
+    fn eq(&self, other: &Self) -> bool {
+        self.api.unique_tag == other.api.unique_tag
+            && self.get_module_handle() == other.get_module_handle()
+    }
+}
+
 impl PduVci {
     pub(crate) fn set_worker(&self, worker: Arc<PduAsyncWorker>) {
         let _ = self.worker.set(worker);

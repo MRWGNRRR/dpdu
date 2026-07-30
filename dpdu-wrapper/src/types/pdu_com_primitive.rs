@@ -133,6 +133,13 @@ pub struct PduPrimitive {
     pub(crate) pdu_sync: Mutex<()>,
 }
 
+impl PartialEq for PduPrimitive {
+    fn eq(&self, other: &Self) -> bool {
+        self.api.unique_tag == other.api.unique_tag
+            && self.unique_tag == other.unique_tag
+    }
+}
+
 impl PduPrimitive {
     /// Returns the D-PDU module handle associated with this primitive.
     pub fn get_module_handle(&self) -> PduModuleHandle {

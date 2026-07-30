@@ -16,7 +16,6 @@ use crate::utils::{NonClonable, random_non_zero_usize};
 use crate::worker::{PduAsyncWorker, Query};
 use dpdu_api_types::{PduCopt, PduError, PduStatus};
 use parking_lot::Mutex;
-use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, Once, OnceLock, Weak};
@@ -68,6 +67,13 @@ pub struct PduLogicalLink {
     pub(crate) logical_link_event_rx: Mutex<Option<broadcast::Receiver<()>>>,
 
     pub(crate) sync: Mutex<()>,
+}
+
+impl PartialEq for PduLogicalLink {
+    fn eq(&self, other: &Self) -> bool {
+        self.api.unique_tag == other.api.unique_tag
+            && self.unique_tag == other.unique_tag
+    }
 }
 
 impl PduLogicalLink {

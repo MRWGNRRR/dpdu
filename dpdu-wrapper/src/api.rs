@@ -244,6 +244,12 @@ pub struct PduApi {
     pub(crate) api_event_rx: Mutex<Option<broadcast::Receiver<()>>>,
 }
 
+impl PartialEq for PduApi {
+    fn eq(&self, other: &Self) -> bool {
+        self.unique_tag == other.unique_tag
+    }
+}
+
 impl Debug for PduApi {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(type_name::<Self>())
