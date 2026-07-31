@@ -56,7 +56,7 @@ pub struct IsoTpStack {
     #[serde(rename = "CP_CanFirstConsecutiveFrameValue")]
     pub can_first_consecutive_frame_value: CpCanFirstConsecutiveFrameValue,
 
-    #[serde(rename = "CP_ChangeSpeedRate")]
+    #[serde(rename = "CP_CANFDTxMaxDataLength")]
     pub canfd_tx_max_data_length: CpCanFdTxMaxDataLength,
 
     #[serde(rename = "CP_CanFuncReqExtAddr")]

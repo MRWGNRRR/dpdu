@@ -14,7 +14,7 @@ impl From<CpCanFdTxMaxDataLength> for ComParamDefinition {
     fn from(value: CpCanFdTxMaxDataLength) -> Self {
         ComParamDefinition {
             class: PduPc::Com,
-            short_name: "CP_ChangeSpeedRate".to_string(),
+            short_name: "CP_CANFDTxMaxDataLength".to_string(),
             variant: value.0.into(),
         }
     }
