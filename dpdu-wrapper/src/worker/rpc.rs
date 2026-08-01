@@ -18,10 +18,9 @@ use crate::types::pdu_version::PduVersionData;
 use crate::types::{
     PduCllHandle, PduCopHandle, PduModuleHandle, PduObjectId, PduUniqueCllTag, PduUniqueCopTag,
 };
-use crate::utils::UnsafePtr;
+use crate::utils::NaivePtr;
 use dpdu_api_types::{EventCallbackFn, IoFilterData, PduCopt, PduObjt, PduQueueMode};
 use dpdu_wrapper_support::declare_worker_rpc;
-use std::ffi::c_void;
 
 declare_worker_rpc! {
     // Virtual functions.
@@ -50,7 +49,7 @@ declare_worker_rpc! {
         => vt_io_ctl_read_prog_voltage(h_mod: PduModuleHandle) -> f32,
 
     VtIoCtlGeneric
-        => vt_io_ctl_generic(h_mod: PduModuleHandle, data: Vec<u8>) -> (),
+        => vt_io_ctl_generic(h_mod: PduModuleHandle, data: @dedicated_ref Vec<u8>) -> (),
 
     VtIoCtlSetBufferSize
         => vt_io_ctl_set_buffer_size(h_mod: PduModuleHandle, h_cll: PduCllHandle, size: u32) -> (),
@@ -115,8 +114,8 @@ declare_worker_rpc! {
     PduCreateComLogicalLink
         => pdu_create_com_logical_link(
             h_mod: PduModuleHandle,
-            create_type: CllCreateType,
-            create_flags: CllCreateFlags,
+            create_type: @dedicated_ref CllCreateType,
+            create_flags: @dedicated_ref CllCreateFlags,
             tag: Option<PduUniqueCllTag>
         ) -> PduCllData,
 
@@ -127,7 +126,7 @@ declare_worker_rpc! {
         => pdu_destroy_com_logical_link(h_mod: PduModuleHandle, h_cll: PduCllHandle) -> (),
 
     PduDestroyItem
-        => pdu_destroy_item(ptr: UnsafePtr<c_void>) -> (),
+        => pdu_destroy_item(ptr: NaivePtr) -> (),
 
     PduDisconnect
         => pdu_disconnect(h_mod: PduModuleHandle, h_cll: PduCllHandle) -> (),
@@ -142,34 +141,34 @@ declare_worker_rpc! {
     PduGetConflictingResources
         => pdu_get_conflicting_resources(
             resource_id: PduObjectId,
-            modules: Vec<PduModuleData>
+            modules: @dedicated_ref Vec<PduModuleData>
         ) -> PduConflictingModules,
 
     PduGetEventItem
-        => pdu_get_event_item(target: PduEventTarget) -> Option<PduEvent>,
+        => pdu_get_event_item(target: @dedicated_ref PduEventTarget) -> Option<PduEvent>,
 
     PduGetLastError
-        => pdu_get_last_error(target: PduLastErrorTarget) -> PduErrorData,
+        => pdu_get_last_error(target: @dedicated_ref PduLastErrorTarget) -> PduErrorData,
 
     PduGetModuleIds
         => pdu_get_module_ids() -> PduModuleList,
 
     PduGetObjectId
-        => pdu_get_object_id(object: PduObjt, short_name: Into<String>) -> Option<PduObjectId>,
+        => pdu_get_object_id(object: PduObjt, short_name: @dedicated_ref Into<String>) -> Option<PduObjectId>,
 
     PduGetResourceIds
         => pdu_get_resource_ids(
             h_mod: Option<PduModuleHandle>,
-            bus: BusSource,
-            protocol: ProtocolSource,
-            pins: Vec<TargetPin>
+            bus: @dedicated_ref BusSource,
+            protocol: @dedicated_ref ProtocolSource,
+            pins: @dedicated_ref Vec<TargetPin>
         ) -> PduModulesResourcesIds,
 
     PduGetResourceStatus
-        => pdu_get_resource_status(resources: Vec<PduResource>) -> PduResourceStatus,
+        => pdu_get_resource_status(resources: @dedicated_ref Vec<PduResource>) -> PduResourceStatus,
 
     PduGetStatus
-        => pdu_get_status(target: PduStatusTarget) -> PduStatusData,
+        => pdu_get_status(target: @dedicated_ref PduStatusTarget) -> PduStatusData,
 
     PduGetTimestamp
         => pdu_get_timestamp(h_mod: PduModuleHandle) -> u32,
@@ -185,9 +184,9 @@ declare_worker_rpc! {
 
     PduIoCtl
         => pdu_io_ctl(
-            target: PduIoCtlTarget,
-            command: PduIoCtlCommand,
-            data: Option<PduIoCtlData>
+            target: @dedicated_ref PduIoCtlTarget,
+            command: @dedicated_ref PduIoCtlCommand,
+            data: @dedicated_opt_ref Option<PduIoCtlData>
         ) -> Option<PduIoCtlData>,
 
     PduLockResource
@@ -205,26 +204,26 @@ declare_worker_rpc! {
 
     PduRegisterEventCallback
         => pdu_register_event_callback(
-            target: PduEventTarget,
+            target: @dedicated_ref PduEventTarget,
             callback: Option<EventCallbackFn>
         ) -> (),
 
     PduSetComParam
-        => pdu_set_com_param(h_mod: PduModuleHandle, h_cll: PduCllHandle, cp: PduComParam) -> (),
+        => pdu_set_com_param(h_mod: PduModuleHandle, h_cll: PduCllHandle, cp: @dedicated_ref PduComParam) -> (),
 
     PduSetUniqueRespIdTable
         => pdu_set_unique_resp_id_table(
             h_mod: PduModuleHandle,
             h_cll: PduCllHandle,
-            table: PduComParamTable
+            table: @dedicated_ref PduComParamTable
         ) -> (),
 
     PduStartComPrimitive => pdu_start_com_primitive(
         h_mod: PduModuleHandle,
         h_cll: PduCllHandle,
         cop_type: PduCopt,
-        data: Vec<u8>,
-        params: Option<PduPrimitiveParams>,
+        data: @dedicated_ref Vec<u8>,
+        params: @dedicated_opt_ref Option<PduPrimitiveParams>,
         tag: Option<PduUniqueCopTag>
     ) -> PduCopHandle,
 

@@ -86,11 +86,36 @@ impl<'a, T> Deref for PhantomRef<'a, T> {
     }
 }
 
+/// A raw pointer wrapper represented as a plain integer address.
+///
+/// `NaivePtr` is intended for storing and transferring opaque pointers,
+/// especially across thread boundaries where raw pointers (`*const T` /
+/// `*mut T`) do not implement `Send`.
+///
+/// The stored value is treated as a memory address and can be converted back
+/// into a typed raw pointer using [`NaivePtr::as_ptr`] or
+/// [`NaivePtr::as_mut_ptr`].
 #[derive(Debug)]
-pub struct UnsafePtr<T>(pub *const T);
+pub(crate) struct NaivePtr(pub usize);
 
-unsafe impl<T> Send for UnsafePtr<T> {}
-unsafe impl<T> Sync for UnsafePtr<T> {}
+impl NaivePtr {
+    /// Converts the stored address into a constant raw pointer.
+    ///
+    /// The caller must ensure that the resulting pointer is valid for reads of
+    /// type `T` and that the pointed memory outlives all uses of the pointer.
+    pub fn as_ptr<T>(&self) -> *const T {
+        self.0 as _
+    }
+
+    /// Converts the stored address into a mutable raw pointer.
+    ///
+    /// The caller must ensure that the resulting pointer is valid for mutable
+    /// access to type `T`, and that no aliased references violate Rust's
+    /// aliasing rules.
+    pub fn as_mut_ptr<T>(&self) -> *mut T {
+        self.0 as _
+    }
+}
 
 /// A lifetime-bound opaque pointer (`*const c_void`).
 ///
@@ -122,19 +147,6 @@ impl<'a> PhantomPtr<'a> {
         self.ptr as _
     }
 }
-
-/// Marks the wrapped value as `Send` and `Sync`.
-///
-/// # Safety
-///
-/// The caller must ensure that sharing or transferring `T` across threads
-/// is sound. Wrapping a non-thread-safe type in `SendSync` can cause
-/// undefined behavior.
-#[derive(Debug, Clone)]
-pub(crate) struct SendSync<T>(pub T);
-
-unsafe impl<T> Send for SendSync<T> {}
-unsafe impl<T> Sync for SendSync<T> {}
 
 impl<T> Deref for SendSync<T> {
     type Target = T;

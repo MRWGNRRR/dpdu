@@ -2054,7 +2054,7 @@ impl PduApi {
 
     pub fn pdu_get_resource_status(
         &self,
-        resources: Vec<PduResource>,
+        resources: &[PduResource],
     ) -> ApiResult<PduResourceStatus> {
         impl_defer_clear_suppress_options!(self, get_resource_status);
 
@@ -2139,7 +2139,7 @@ impl PduApi {
                 );
 
                 map.insert(
-                    resource,
+                    resource.clone(),
                     ResourceStatus {
                         raw_status: status,
                         busy,
@@ -2364,7 +2364,7 @@ impl PduApi {
     pub fn pdu_get_conflicting_resources(
         &self,
         resource_id: PduObjectId,
-        modules: Vec<PduModuleData>,
+        modules: &[PduModuleData],
     ) -> ApiResult<PduConflictingModules> {
         impl_defer_clear_suppress_options!(self, get_conflicting_resources);
 
