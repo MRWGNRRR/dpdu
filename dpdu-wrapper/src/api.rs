@@ -590,9 +590,22 @@ impl PduApi {
 
         let get_event_item_fn = self.symbols.get_event_item;
         let result = wrap_pdu_call(FUNC, || get_event_item_fn(h_mod, h_cll, &mut item_ptr));
+        let debug_ret = || {
+            trace!(
+                func = FUNC,
+                item_ptr = format!("0x{:x}", item_ptr as usize),
+                item_type = ?NonNull::new(item_ptr).map(|wptr| unsafe { (&*wptr.as_ptr()).item_type }),
+                "D-PDU API Call Return"
+            );
+        };
 
         match result {
-            PduError::StatusNoError | PduError::EventQueueEmpty => {}
+            PduError::StatusNoError => {},
+            PduError::EventQueueEmpty => {
+                trace!("event queue is empty");
+                debug_ret();
+                return Ok(None);
+            },
             v => {
                 self.log_api_call_fail(
                     FUNC,
@@ -604,12 +617,7 @@ impl PduApi {
             }
         }
 
-        trace!(
-            func = FUNC,
-            item_ptr = format!("0x{:x}", item_ptr as usize),
-            item_type = ?NonNull::new(item_ptr).map(|wptr| unsafe { (&*wptr.as_ptr()).item_type }),
-            "D-PDU API Call Return"
-        );
+        debug_ret();
 
         if item_ptr.is_null() {
             return Ok(None);
@@ -2871,9 +2879,12 @@ impl PduApi {
         });
 
         let target = PduStatusTarget::LogicalLink(h_mod, h_cll);
-        let data = self.pdu_get_status(&target)?;
-
-        match data.status_code {
+        let status = self
+            .pdu_get_status(&target)
+            .map(|v| v.status_code)
+            .unwrap_or(PduStatus::CllstOffline); // for bad drivers
+        
+        match status {
             PduStatus::CllstOnline | PduStatus::CllstCommStarted => {
                 let _ = self.pdu_disconnect(h_mod, h_cll);
             }
