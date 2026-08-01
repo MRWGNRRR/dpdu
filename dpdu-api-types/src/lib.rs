@@ -38,7 +38,7 @@ pub const PDU_ID_UNDEF: u32 = 0xFFFFFFFE;
 pub const PDU_HANDLE_UNDEF: u32 = 0xFFFFFFFF;
 
 /// PDU Event callback function type
-pub type EventCallbackFn = unsafe extern "system-unwind" fn(
+pub type EventCallbackFn = unsafe extern "system" fn(
     event_type: PduEvtData,
     h_mod: u32,
     h_cll: u32,
