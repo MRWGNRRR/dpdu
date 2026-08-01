@@ -60,8 +60,9 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::sync::{Arc, OnceLock, Weak};
-use std::thread::spawn;
+use std::thread::{sleep, spawn};
 use std::{ptr, slice};
+use std::time::Duration;
 use thread_local::ThreadLocal;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{Level, debug, error, info, trace, warn};
@@ -723,6 +724,7 @@ impl PduApi {
 
         let h_cop = (item.h_cop != PDU_HANDLE_UNDEF).then(|| item.h_cop);
         let cop_tag = NonZeroUsize::new(item.p_cop_tag as _);
+        let timestamp = item.timestamp;
 
         self.pdu_destroy_item(item_ptr as _)?;
 
@@ -730,7 +732,7 @@ impl PduApi {
             target: target.clone(),
             h_cop,
             cop_tag,
-            timestamp: item.timestamp,
+            timestamp,
             data,
         }))
     }
