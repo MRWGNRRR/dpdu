@@ -38,6 +38,8 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
         .filter(|rpc| rpc.method != "_virtual")
         .map(|rpc| {
             let func_name = &rpc.method;
+            let func_name_dedicated = format!("{func_name}_dedicated");
+
             let func_args = rpc.args.iter().map(|arg| {
                 let name = arg.get_name();
                 let ty = arg.get_ty();
@@ -46,6 +48,7 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
                     false => quote! { #name: #ty }
                 }
             });
+            let func_args_dedicated = func_args.clone();
 
             let variant_name = &rpc.variant;
             let query_args = rpc.args.iter().map(|arg| {
@@ -56,6 +59,7 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
                     quote! { #name }
                 }
             });
+            let dedicated_args = query_args.clone();
 
             let doc_hidden = rpc.private.then(|| quote! { #[doc(hidden)] });
             let fn_visibility = rpc.private
@@ -84,6 +88,20 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
                             Response::#variant_name(v) => Ok(v?),
                             _ => unreachable!()
                         }
+                    }
+
+                    #doc_hidden
+                    #fn_visibility async fn #func_name_dedicated(&self, #(#func_args_dedicated),*) -> crate::error::GeneralResult<#ret_ty> {
+                        let api = self.api.clone();
+                        let task = move || api.#func_name(#(#dedicated_args),*);
+                        let panic_message = format!(
+                            "internal error: PduAsyncWorker::{}() task panicked",
+                            #func_name_dedicated
+                        );
+                        let result = ::tokio::task::spawn_blocking()
+                            .await
+                            .expect(panic_message);
+                        Ok(result)
                     }
                 }
             }
