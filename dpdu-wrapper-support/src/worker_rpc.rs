@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
-use quote::quote;
+use quote::{format_ident, quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
 use syn::token::Paren;
 use syn::{GenericArgument, PathArguments, Token, Type, parse_macro_input};
@@ -38,7 +38,8 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
         .filter(|rpc| rpc.method != "_virtual")
         .map(|rpc| {
             let func_name = &rpc.method;
-            let func_name_dedicated = format!("{func_name}_dedicated");
+            let func_name_dedicated = format_ident!("{func_name}_dedicated");
+            let func_name_dedicated_str = func_name_dedicated.to_string();
 
             let func_args = rpc.args.iter().map(|arg| {
                 let name = arg.get_name();
@@ -59,7 +60,43 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
                     quote! { #name }
                 }
             });
-            let dedicated_args = query_args.clone();
+
+            let make_prepared_dedicated_arg = |ident: &Ident| format_ident!("prep_{ident}");
+            let mut prepared_dedicated_args = Vec::<proc_macro2::TokenStream>::new();
+
+            for arg in rpc.args.iter() {
+                if arg.is_into() {
+                    let arg_name = arg.get_name();
+                    let var_name = make_prepared_dedicated_arg(arg.get_name());
+
+                    prepared_dedicated_args.push(quote! {
+                        let #var_name = #arg_name.into();
+                    });
+                }
+            }
+
+            let dedicated_args = rpc.args.iter().map(|arg| {
+                let name = arg.get_name();
+                let dedicated_ref = if arg.is_dedicated_ref() {
+                    quote!{ & }
+                } else {
+                    quote! {}
+                };
+                if arg.is_into() {
+                    let var_name = make_prepared_dedicated_arg(name);
+                    quote! { #dedicated_ref #var_name }
+                } else {
+                    if is_naive_ptr_type(arg.get_ty()) {
+                        quote! { #name.as_mut_ptr() }
+                    } else {
+                        if arg.is_dedicated_opt_ref() {
+                            quote! { #name.as_ref() }
+                        } else {
+                            quote! { #dedicated_ref #name }
+                        }
+                    }
+                }
+            });
 
             let doc_hidden = rpc.private.then(|| quote! { #[doc(hidden)] });
             let fn_visibility = rpc.private
@@ -92,15 +129,15 @@ pub fn declare_worker_rpc(input: TokenStream) -> TokenStream {
 
                     #doc_hidden
                     #fn_visibility async fn #func_name_dedicated(&self, #(#func_args_dedicated),*) -> crate::error::GeneralResult<#ret_ty> {
+                        #(#prepared_dedicated_args)*
                         let api = self.api.clone();
                         let task = move || api.#func_name(#(#dedicated_args),*);
-                        let panic_message = format!(
-                            "internal error: PduAsyncWorker::{}() task panicked",
-                            #func_name_dedicated
-                        );
-                        let result = ::tokio::task::spawn_blocking()
+                        let result = ::tokio::task::spawn_blocking(task)
                             .await
-                            .expect(panic_message);
+                            .expect(&format!(
+                                "internal error: PduAsyncWorker::{}() task panicked",
+                                #func_name_dedicated_str
+                            ))?;
                         Ok(result)
                     }
                 }
@@ -184,6 +221,30 @@ impl Parse for RpcDefinition {
                     )
                 })?;
 
+                let mut dedicated_ref = false;
+                let mut dedicated_opt_ref = false;
+
+                while args_content.peek(Token![@]) {
+                    args_content.parse::<Token![@]>()?; // infallible
+                    let ident: Ident = args_content.parse().map_err(|_| {
+                        syn::Error::new(
+                            args_content.span(),
+                            "expected an ident after the @ symbol"
+                        )
+                    })?;
+
+                    match ident.to_string().as_str() {
+                        "dedicated_ref" => { dedicated_ref = true },
+                        "dedicated_opt_ref" => { dedicated_opt_ref = true },
+                        v => {
+                            return Err(syn::Error::new(
+                                args_content.span(),
+                                format!("unsupported ident after the @ symbol: {v}")
+                            ));
+                        }
+                    }
+                }
+
                 let ty: Type = args_content.parse().map_err(|_| {
                     syn::Error::new(
                         args_content.span(),
@@ -192,8 +253,8 @@ impl Parse for RpcDefinition {
                 })?;
 
                 args.push(match parse_into_type(&ty) {
-                    Some(ty) => Arg::Into { name, ty },
-                    None => Arg::Normal { name, ty },
+                    Some(ty) => Arg::Into { name, ty, dedicated_ref },
+                    None => Arg::Normal { name, ty, dedicated_ref, dedicated_opt_ref },
                 });
 
                 if args_content.peek(Token![,]) {
@@ -235,9 +296,9 @@ struct Rpc {
 }
 
 enum Arg {
-    Normal { name: Ident, ty: Type },
+    Normal { name: Ident, ty: Type, dedicated_ref: bool, dedicated_opt_ref: bool },
 
-    Into { name: Ident, ty: Type },
+    Into { name: Ident, ty: Type, dedicated_ref: bool },
 }
 
 impl Arg {
@@ -258,6 +319,20 @@ impl Arg {
             Arg::Into { ty, .. } => ty,
         }
     }
+
+    fn is_dedicated_ref(&self) -> bool {
+        match self {
+            Arg::Normal { dedicated_ref, .. } => dedicated_ref,
+            Arg::Into { dedicated_ref, .. } => dedicated_ref
+        }.to_owned()
+    }
+
+    fn is_dedicated_opt_ref(&self) -> bool {
+        match self {
+            Arg::Normal { dedicated_opt_ref, .. } => dedicated_opt_ref.to_owned(),
+            _ => false
+        }.to_owned()
+    }
 }
 
 fn parse_into_type(ty: &Type) -> Option<Type> {
@@ -277,5 +352,32 @@ fn parse_into_type(ty: &Type) -> Option<Type> {
     match type_generic.args.first()? {
         GenericArgument::Type(inner) => Some(inner.clone()),
         _ => None,
+    }
+}
+
+fn is_vec_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => {
+            let path = &path.path;
+            path.segments.last()
+                .map(|s| s.ident == "Vec")
+                .unwrap_or(false)
+        },
+        _ => false
+    }
+}
+
+fn is_naive_ptr_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => {
+            let path = path.path.segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
+
+            path == "NaivePtr"
+        },
+        _ => false
     }
 }
