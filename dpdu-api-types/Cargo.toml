@@ -1,6 +1,6 @@
 [package]
 name = "dpdu-api-types"
-version = "0.10.0"
+version = "0.10.1"
 authors = ["Ashcon Mohseninia <ashconm@outlook.com>", "MRWGNRRR <171420035+MRWGNRRR@users.noreply.github.com>"]
 edition = "2024"
 description = "An implementation of the core D-PDU (ISO22900-2) library in Rust"
