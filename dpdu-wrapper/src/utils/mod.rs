@@ -10,7 +10,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Cursor, Read, Seek};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref};
 use std::path::Path;
 use std::ptr;
 use std::ptr::NonNull;
@@ -96,7 +96,19 @@ impl<'a, T> Deref for PhantomRef<'a, T> {
 /// into a typed raw pointer using [`NaivePtr::as_ptr`] or
 /// [`NaivePtr::as_mut_ptr`].
 #[derive(Debug)]
-pub(crate) struct NaivePtr(pub usize);
+pub struct NaivePtr(pub usize);
+
+impl<T> From<*const T> for NaivePtr {
+    fn from(ptr: *const T) -> Self {
+        Self(ptr as usize)
+    }
+}
+
+impl<T> From<*mut T> for NaivePtr {
+    fn from(ptr: *mut T) -> Self {
+        Self(ptr as usize)
+    }
+}
 
 impl NaivePtr {
     /// Converts the stored address into a constant raw pointer.
@@ -145,20 +157,6 @@ impl<'a> PhantomPtr<'a> {
     /// of the underlying data.
     pub fn as_mut_ptr(&self) -> *mut c_void {
         self.ptr as _
-    }
-}
-
-impl<T> Deref for SendSync<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for SendSync<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

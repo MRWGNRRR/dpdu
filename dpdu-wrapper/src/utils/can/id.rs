@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn standard_id_new_unchecked_out_of_range() {
         let id = StandardId::MAX.as_raw() + 1;
-        assert_eq!(unsafe { StandardId::new_unchecked(id) }, StandardId(id));
+        assert_eq!(StandardId::new_unchecked(id), StandardId(id));
     }
 
     #[test]
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn extended_id_new_unchecked_out_of_range() {
         let id = ExtendedId::MAX.as_raw() + 1;
-        assert_eq!(unsafe { ExtendedId::new_unchecked(id) }, ExtendedId(id));
+        assert_eq!(ExtendedId::new_unchecked(id), ExtendedId(id));
     }
 
     #[test]

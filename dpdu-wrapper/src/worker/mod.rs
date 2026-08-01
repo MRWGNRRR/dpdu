@@ -177,8 +177,7 @@ impl PduAsyncWorker {
                         Q::PduSetComParam(h_mod, h_cll, cp) => R::PduSetComParam(map!(api.pdu_set_com_param(h_mod, h_cll, &cp))),
                         Q::PduSetUniqueRespIdTable(h_mod, h_cll, table) => R::PduSetUniqueRespIdTable(map!(api.pdu_set_unique_resp_id_table(h_mod, h_cll, &table))),
                         Q::PduStartComPrimitive(h_mod, h_cll, cop_type, data, params, tag) => R::PduStartComPrimitive(map!(api.pdu_start_com_primitive(h_mod, h_cll, cop_type, &data, params.as_ref(), tag))),
-                        Q::PduUnlockResource(h_mod, h_cll, mask) => R::PduUnlockResource(map!(api.pdu_unlock_resource(h_mod, h_cll, mask))),
-                        _ => todo!()
+                        Q::PduUnlockResource(h_mod, h_cll, mask) => R::PduUnlockResource(map!(api.pdu_unlock_resource(h_mod, h_cll, mask)))
                     };
 
                     if let Some(tx) = resp_tx {

@@ -142,7 +142,7 @@ struct ApiSymbols {
 ///
 /// For internal use only.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SuppressLogOptions {
+pub struct SuppressLogOptions {
     pub(crate) cancel_primitive: PduErrorFlag,
     pub(crate) connect: PduErrorFlag,
     pub(crate) construct: PduErrorFlag,
