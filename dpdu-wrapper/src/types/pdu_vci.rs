@@ -553,19 +553,17 @@ impl PduVci {
     pub async fn get_battery_voltage(&self) -> GeneralResult<Option<f32>> {
         let h_mod = self.module_data.h_mod;
 
-        let voltage = match self.worker.get() {
-            Some(worker) => worker.vt_io_ctl_read_vbatt(h_mod).await?,
-            None => {
-                let me = self.take_me_expect();
-                let thread = move || me.api.vt_io_ctl_read_vbatt(h_mod);
+        let me = self.take_me_expect();
+        let thread = move || me.api.vt_io_ctl_read_vbatt(h_mod);
 
-                spawn_blocking(thread).await.expect(
-                    "internal error: PduVci::blocking_get_battery_voltage task panicked"
-                )?
-            }
-        };
+        // Run on a dedicated blocking thread because this I/O control may take
+        // tens of milliseconds. Executing it on the worker queue would serialize
+        // unrelated D-PDU requests and increase their latency.
+        let result = spawn_blocking(thread)
+            .await
+            .expect("internal error: PduVci::blocking_get_battery_voltage task panicked")?;
 
-        Ok(voltage)
+        Ok(result)
     }
 
     pub(crate) fn blocking_listen_events(
