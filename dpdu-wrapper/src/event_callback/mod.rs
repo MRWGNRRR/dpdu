@@ -6,7 +6,7 @@ use dpdu_api_types::bitflags::PduErrorFlag;
 use std::ffi::c_void;
 use tracing::{debug, error, trace, warn};
 
-pub(crate) unsafe extern "system-unwind" fn event_callback(
+pub(crate) unsafe extern "system" fn event_callback(
     _event_type: PduEvtData,
     h_mod: PduModuleHandle,
     h_cll: PduCllHandle,
