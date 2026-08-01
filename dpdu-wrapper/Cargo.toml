@@ -20,7 +20,7 @@ exe = { version = "0.5.7" }
 regex = { version = "1.12.4" }
 semver = { version = "1.0.28" }
 strum = { version = "0.28.0", features = ["derive", "strum_macros"] }
-dpdu-api-types = { version = "0.10.0", path = "../dpdu-api-types", features = ["full"] }
+dpdu-api-types = { version = "0.10.1", path = "../dpdu-api-types", features = ["full"] }
 libloading = { version = "0.9.0" }
 rand = { version = "0.10.1" }
 chrono = { version = "0.4.45" }
