@@ -24,8 +24,8 @@ impl From<CpRequestAddrMode> for ComParamDefinition {
 }
 
 impl CpRequestAddrMode {
-    pub const PHYSICAL: Self = CpRequestAddrMode(0);
-    pub const FUNCTIONAL: Self = CpRequestAddrMode(1);
+    pub const PHYSICAL: Self = CpRequestAddrMode(1);
+    pub const FUNCTIONAL: Self = CpRequestAddrMode(2);
 }
 
 impl From<CpRequestAddrMode> for u32 {
