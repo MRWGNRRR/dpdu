@@ -47,25 +47,18 @@ impl PduAsyncWorker {
         });
 
         // command supervisor
-        spawn({
-            let api = api.clone();
-            let shdn_rx = shdn_rx.clone();
-            let cmd_rx = cmd_rx.clone();
-            move || {
-                loop {
-                    let api = api.clone();
-                    let shdn_rx = shdn_rx.clone();
-                    let cmd_rx = cmd_rx.clone();
+        spawn(move || {
+            loop {
+                let api = api.clone();
+                let shdn_rx = shdn_rx.clone();
+                let cmd_rx = cmd_rx.clone();
 
-                    let thread = move || {
-                        PduAsyncWorker::command_thread(api.clone(), shdn_rx.clone(), cmd_rx.clone())
-                    };
+                let thread = move || PduAsyncWorker::command_thread(api, shdn_rx, cmd_rx);
 
-                    if spawn(thread).join().is_ok() {
-                        break; // normal thread termination
-                    } else {
-                        warn!("D-PDU command worker panicked; restarting worker thread");
-                    }
+                if spawn(thread).join().is_ok() {
+                    break; // normal thread termination
+                } else {
+                    warn!("D-PDU command worker panicked; restarting worker thread");
                 }
             }
         });
@@ -221,7 +214,7 @@ impl Drop for PduAsyncWorker {
                     }
                 },
                 Err(err) => {
-                    error!("Unable to send destruct query to the PdyAsyncWorker: {err}");
+                    error!("Unable to send destruct query to the PduAsyncWorker: {err}");
                 }
             };
 
