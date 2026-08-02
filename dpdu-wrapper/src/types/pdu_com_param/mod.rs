@@ -209,7 +209,7 @@ impl ByteFieldComParam {
 
     pub(crate) fn get_pdu_data(&self) -> PhantomRef<'_, ParamByteFieldData> {
         PhantomRef::new(ParamByteFieldData {
-            param_max_len: self.owned_data.capacity() as _,
+            param_max_len: self.capacity as _,
             param_act_len: self.owned_data.len() as _,
             p_data_array: self.owned_data.as_ptr() as _,
         })
@@ -242,7 +242,7 @@ impl StructFieldComParam {
     pub(crate) fn get_pdu_data(&self) -> PhantomRef<'_, ParamStructFieldData> {
         PhantomRef::new(ParamStructFieldData {
             com_param_struct_type: self.struct_type.expect("struct type is set"),
-            param_max_entries: self.owned_data.capacity() as _,
+            param_max_entries: self.capacity as _,
             param_act_entries: self.owned_data.len() as _,
             p_struct_array: self.owned_data.as_ptr() as _,
         })
@@ -270,7 +270,7 @@ impl LongFieldComParam {
 
     pub(crate) fn get_pdu_data(&self) -> PhantomRef<'_, ParamLongFieldData> {
         PhantomRef::new(ParamLongFieldData {
-            param_max_len: self.owned_data.capacity() as _,
+            param_max_len: self.capacity as _,
             param_act_len: self.owned_data.len() as _,
             p_data_array: self.owned_data.as_ptr() as _,
         })
