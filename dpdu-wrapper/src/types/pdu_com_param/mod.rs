@@ -209,7 +209,7 @@ impl ByteFieldComParam {
 
     pub(crate) fn get_pdu_data(&self) -> PhantomRef<'_, ParamByteFieldData> {
         PhantomRef::new(ParamByteFieldData {
-            param_max_len: self.capacity as _,
+            param_max_len: normalize_capacity(self.capacity) as _,
             param_act_len: self.owned_data.len() as _,
             p_data_array: self.owned_data.as_ptr() as _,
         })
@@ -242,7 +242,7 @@ impl StructFieldComParam {
     pub(crate) fn get_pdu_data(&self) -> PhantomRef<'_, ParamStructFieldData> {
         PhantomRef::new(ParamStructFieldData {
             com_param_struct_type: self.struct_type.expect("struct type is set"),
-            param_max_entries: self.capacity as _,
+            param_max_entries: normalize_capacity(self.capacity) as _,
             param_act_entries: self.owned_data.len() as _,
             p_struct_array: self.owned_data.as_ptr() as _,
         })
@@ -270,7 +270,7 @@ impl LongFieldComParam {
 
     pub(crate) fn get_pdu_data(&self) -> PhantomRef<'_, ParamLongFieldData> {
         PhantomRef::new(ParamLongFieldData {
-            param_max_len: self.capacity as _,
+            param_max_len: normalize_capacity(self.capacity) as _,
             param_act_len: self.owned_data.len() as _,
             p_data_array: self.owned_data.as_ptr() as _,
         })
@@ -538,4 +538,18 @@ impl From<ParamStructSessionTiming> for StructComParam {
             session_timing: value,
         }
     }
+}
+
+/// Normalizes a structure capacity value for D-PDU API compatibility.
+///
+/// Some D-PDU API drivers (notably Softing) do not correctly handle
+/// STRUCTFIELD ComParams with a maximum number of structures equal to zero.
+/// Even when the actual number of structures is zero, such drivers may use
+/// the maximum value during internal processing and cause memory corruption.
+///
+/// To avoid triggering this driver bug, zero capacity is replaced with one.
+/// The actual number of structures remains unchanged, so this only affects
+/// the advertised maximum capacity.
+fn normalize_capacity(cap: usize) -> usize {
+    (cap == 0).then(|| 1).unwrap_or(cap)
 }
