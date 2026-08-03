@@ -99,7 +99,7 @@ pub trait DebugView {
 /// This type stores only the pointer address and does not retain
 /// ownership or provide access to the underlying memory.
 #[derive(Clone, Copy)]
-pub struct PtrRepr(usize);
+pub(crate) struct PtrRepr(usize);
 
 impl<T> From<*const T> for PtrRepr {
     /// Creates a pointer representation from a constant raw pointer.
