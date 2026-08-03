@@ -2,15 +2,14 @@ mod rpc;
 
 use crate::api::PduApi;
 use crate::error::{GeneralError, GeneralResult};
-use flume::{Selector, TrySendError};
 pub use rpc::Query;
 pub use rpc::Response;
-use std::sync::{Arc, OnceLock, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock, Weak};
 use std::thread::spawn;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::oneshot;
-use tracing::{error, info, warn};
+use tracing::warn;
 
 pub type WorkerResult<T> = ::std::result::Result<T, WorkerError>;
 
@@ -33,7 +32,7 @@ pub struct PduAsyncWorker {
 
     pub(crate) destruct_on_drop: Arc<AtomicBool>,
 
-    pub(crate) dropped: Arc<OnceLock<()>>
+    pub(crate) dropped: Arc<OnceLock<()>>,
 }
 
 impl PduAsyncWorker {
@@ -60,12 +59,9 @@ impl PduAsyncWorker {
                 let cmd_rx = cmd_rx.clone();
                 let destruct_on_drop = destruct_on_drop.clone();
 
-                let thread = move || PduAsyncWorker::command_thread(
-                    api,
-                    need_shutdown,
-                    destruct_on_drop,
-                    cmd_rx
-                );
+                let thread = move || {
+                    PduAsyncWorker::command_thread(api, need_shutdown, destruct_on_drop, cmd_rx)
+                };
 
                 if spawn(thread).join().is_ok() {
                     break; // normal thread termination
@@ -138,21 +134,15 @@ impl PduAsyncWorker {
 
             let response = match query {
                 // Virtual functions.
-                Q::VtIoCtlReset => {
-                    R::VtCllDestructor(me!(api.vt_io_ctl_reset()))
-                }
+                Q::VtIoCtlReset => R::VtCllDestructor(me!(api.vt_io_ctl_reset())),
                 Q::VtIoCtlClearTxQueue(h_mod, h_cll) => {
                     R::VtIoCtlClearTxQueue(me!(api.vt_io_ctl_clear_tx_queue(h_mod, h_cll)))
                 }
                 Q::VtIoCtlSuspendTxQueue(h_mod, h_cll) => {
-                    R::VtIoCtlSuspendTxQueue(
-                        me!(api.vt_io_ctl_suspend_tx_queue(h_mod, h_cll))
-                    )
+                    R::VtIoCtlSuspendTxQueue(me!(api.vt_io_ctl_suspend_tx_queue(h_mod, h_cll)))
                 }
                 Q::VtIoCtlResumeTxQueue(h_mod, h_cll) => {
-                    R::VtIoCtlResumeTxQueue(
-                        me!(api.vt_io_ctl_resume_tx_queue(h_mod, h_cll))
-                    )
+                    R::VtIoCtlResumeTxQueue(me!(api.vt_io_ctl_resume_tx_queue(h_mod, h_cll)))
                 }
                 Q::VtIoCtlClearRxQueue(h_mod, h_cll) => {
                     R::VtIoCtlClearRxQueue(me!(api.vt_io_ctl_clear_rx_queue(h_mod, h_cll)))
@@ -160,11 +150,9 @@ impl PduAsyncWorker {
                 Q::VtIoCtlReadVbatt(h_mod) => {
                     R::VtIoCtlReadVbatt(me!(api.vt_io_ctl_read_vbatt(h_mod)))
                 }
-                Q::VtIoCtlSetProgVoltage(h_mod, voltage, pin) => {
-                    R::VtIoCtlSetProgVoltage(
-                        me!(api.vt_io_ctl_set_prog_voltage(h_mod, voltage, pin))
-                    )
-                }
+                Q::VtIoCtlSetProgVoltage(h_mod, voltage, pin) => R::VtIoCtlSetProgVoltage(me!(
+                    api.vt_io_ctl_set_prog_voltage(h_mod, voltage, pin)
+                )),
                 Q::VtIoCtlReagProgVoltage(h_mod) => {
                     R::VtIoCtlReagProgVoltage(me!(api.vt_io_ctl_read_prog_voltage(h_mod)))
                 }
@@ -172,46 +160,31 @@ impl PduAsyncWorker {
                     R::VtIoCtlGeneric(me!(api.vt_io_ctl_generic(h_mod, &data)))
                 }
                 Q::VtIoCtlSetBufferSize(h_mod, h_cll, size) => {
-                    R::VtIoCtlSetBufferSize(
-                        me!(api.vt_io_ctl_set_buffer_size(h_mod, h_cll, size))
-                    )
+                    R::VtIoCtlSetBufferSize(me!(api.vt_io_ctl_set_buffer_size(h_mod, h_cll, size)))
                 }
-                Q::VtIoCtlStartMsgFilter(h_mod, h_cll, data) => {
-                    R::VtIoCtlStartMsgFilter(
-                        me!(api.vt_io_ctl_start_msg_filter(h_mod, h_cll, data))
-                    )
-                }
-                Q::VtIoCtlStopMsgFilter(h_mod, h_cll, number) => {
-                    R::VtIoCtlStopMsgFilter(
-                        me!(api.vt_io_ctl_stop_msg_filter(h_mod, h_cll, number))
-                    )
-                }
+                Q::VtIoCtlStartMsgFilter(h_mod, h_cll, data) => R::VtIoCtlStartMsgFilter(me!(
+                    api.vt_io_ctl_start_msg_filter(h_mod, h_cll, data)
+                )),
+                Q::VtIoCtlStopMsgFilter(h_mod, h_cll, number) => R::VtIoCtlStopMsgFilter(me!(
+                    api.vt_io_ctl_stop_msg_filter(h_mod, h_cll, number)
+                )),
                 Q::VtIoCtlClearMsgFilter(h_mod, h_cll) => {
-                    R::VtIoCtlClearMsgFilter(
-                        me!(api.vt_io_ctl_clear_msg_filter(h_mod, h_cll))
-                    )
+                    R::VtIoCtlClearMsgFilter(me!(api.vt_io_ctl_clear_msg_filter(h_mod, h_cll)))
                 }
                 Q::VtIoCtlSetEventQueueProperties(h_mod, h_cll, size, mode) => {
                     R::VtIoCtlSetEventQueueProperties(me!(
-                                api.vt_io_ctl_set_event_queue_properties(
-                                    h_mod,
-                                    h_cll,
-                                    size,
-                                    mode
-                                )
-                            ))
-                },
+                        api.vt_io_ctl_set_event_queue_properties(h_mod, h_cll, size, mode)
+                    ))
+                }
                 Q::VtIoCtlGetCableId(h_mod) => {
                     R::VtIoCtlGetCableId(me!(api.vt_io_ctl_get_cable_id(h_mod)))
                 }
                 Q::VtIoCtlSendBreak(h_mod, h_cll) => {
                     R::VtIoCtlSendBreak(me!(api.vt_io_ctl_send_break(h_mod, h_cll)))
                 }
-                Q::VtIoCtlReadIgnitionSenseState(h_mod, pin) => {
-                    R::VtIoCtlReadIgnitionSenseState(me!(
-                                api.vt_io_ctl_read_ignition_sense_state(h_mod, pin)
-                            ))
-                }
+                Q::VtIoCtlReadIgnitionSenseState(h_mod, pin) => R::VtIoCtlReadIgnitionSenseState(
+                    me!(api.vt_io_ctl_read_ignition_sense_state(h_mod, pin)),
+                ),
                 Q::VtModuleDestructor(h_mod) => {
                     R::VtModuleDestructor(me!(api.vt_module_destructor(h_mod)))
                 }
@@ -224,33 +197,21 @@ impl PduAsyncWorker {
 
                 // Real D-PDU API queries.
                 Q::PduCancelComPrimitive(h_mod, h_cll, h_cop) => {
-                    R::PduCancelComPrimitive(me!(
-                                api.pdu_cancel_com_primitive(h_mod, h_cll, h_cop)
-                            ))
+                    R::PduCancelComPrimitive(me!(api.pdu_cancel_com_primitive(h_mod, h_cll, h_cop)))
                 }
-                Q::PduConnect(h_mod, h_cll) => {
-                    R::PduConnect(me!(api.pdu_connect(h_mod, h_cll)))
-                }
-                Q::PduConstruct => {
-                    R::PduConstruct(me!(api.pdu_construct()))
-                },
+                Q::PduConnect(h_mod, h_cll) => R::PduConnect(me!(api.pdu_connect(h_mod, h_cll))),
+                Q::PduConstruct => R::PduConstruct(me!(api.pdu_construct())),
                 Q::PduCreateComLogicalLink(h_mod, create_type, create_flags, tag) => {
-                    R::PduCreateComLogicalLink(me!(
-                                api.pdu_create_com_logical_link(
-                                    h_mod,
-                                    &create_type,
-                                    &create_flags,
-                                    tag
-                                )
-                            ))
+                    R::PduCreateComLogicalLink(me!(api.pdu_create_com_logical_link(
+                        h_mod,
+                        &create_type,
+                        &create_flags,
+                        tag
+                    )))
                 }
-                Q::PduDestruct => {
-                    R::PduDestruct(me!(api.pdu_destruct()))
-                }
+                Q::PduDestruct => R::PduDestruct(me!(api.pdu_destruct())),
                 Q::PduDestroyComLogicalLink(h_mod, h_cll) => {
-                    R::PduDestroyComLogicalLink(me!(
-                                api.pdu_destroy_com_logical_link(h_mod, h_cll)
-                            ))
+                    R::PduDestroyComLogicalLink(me!(api.pdu_destroy_com_logical_link(h_mod, h_cll)))
                 }
                 Q::PduDestroyItem(ptr) => {
                     R::PduDestroyItem(me!(api.pdu_destroy_item(ptr.as_mut_ptr())))
@@ -263,8 +224,8 @@ impl PduAsyncWorker {
                 }
                 Q::PduGetConflictingResources(resource_id, modules) => {
                     R::PduGetConflictingResources(me!(
-                                api.pdu_get_conflicting_resources(resource_id, &modules)
-                            ))
+                        api.pdu_get_conflicting_resources(resource_id, &modules)
+                    ))
                 }
                 Q::PduGetEventItem(target) => {
                     R::PduGetEventItem(me!(api.pdu_get_event_item(&target)))
@@ -272,34 +233,22 @@ impl PduAsyncWorker {
                 Q::PduGetLastError(target) => {
                     R::PduGetLastError(me!(api.pdu_get_last_error(&target)))
                 }
-                Q::PduGetModuleIds => {
-                    R::PduGetModuleIds(me!(api.pdu_get_module_ids()))
-                }
+                Q::PduGetModuleIds => R::PduGetModuleIds(me!(api.pdu_get_module_ids())),
                 Q::PduGetObjectId(object, short_name) => {
                     R::PduGetObjectId(me!(api.pdu_get_object_id(object, &short_name)))
                 }
-                Q::PduGetResourceIds(h_mod, bus, protocol, pins) => {
-                    R::PduGetResourceIds(me!(
-                                api.pdu_get_resource_ids(h_mod, &bus, &protocol, &pins)
-                            ))
-                }
+                Q::PduGetResourceIds(h_mod, bus, protocol, pins) => R::PduGetResourceIds(me!(
+                    api.pdu_get_resource_ids(h_mod, &bus, &protocol, &pins)
+                )),
                 Q::PduGetResourceStatus(resources) => {
                     R::PduGetResourceStatus(me!(api.pdu_get_resource_status(&resources)))
                 }
-                Q::PduGetStatus(target) => {
-                    R::PduGetStatus(me!(api.pdu_get_status(&target)))
-                }
-                Q::PduGetTimestamp(h_mod) => {
-                    R::PduGetTimestamp(me!(api.pdu_get_timestamp(h_mod)))
-                }
+                Q::PduGetStatus(target) => R::PduGetStatus(me!(api.pdu_get_status(&target))),
+                Q::PduGetTimestamp(h_mod) => R::PduGetTimestamp(me!(api.pdu_get_timestamp(h_mod))),
                 Q::PduGetUniqueRespIdTable(h_mod, h_cll) => {
-                    R::PduGetUniqueRespIdTable(me!(
-                                api.pdu_get_unique_resp_id_table(h_mod, h_cll)
-                            ))
+                    R::PduGetUniqueRespIdTable(me!(api.pdu_get_unique_resp_id_table(h_mod, h_cll)))
                 }
-                Q::PduGetVersion(h_mod) => {
-                    R::PduGetVersion(me!(api.pdu_get_version(h_mod)))
-                }
+                Q::PduGetVersion(h_mod) => R::PduGetVersion(me!(api.pdu_get_version(h_mod))),
                 Q::PduIoCtl(target, command, data) => {
                     R::PduIoCtl(me!(api.pdu_io_ctl(&target, &command, data.as_ref())))
                 }
@@ -312,26 +261,22 @@ impl PduAsyncWorker {
                 Q::PduModuleDisconnect(h_mod) => {
                     R::PduModuleDisconnect(me!(api.pdu_module_disconnect(h_mod)))
                 }
-                Q::PduRegisterEventCallback(target, callback) => {
-                    R::PduRegisterEventCallback(me!(
-                                api.pdu_register_event_callback(&target, callback)
-                            ))
-                }
+                Q::PduRegisterEventCallback(target, callback) => R::PduRegisterEventCallback(me!(
+                    api.pdu_register_event_callback(&target, callback)
+                )),
                 Q::PduSetComParam(h_mod, h_cll, cp) => {
                     R::PduSetComParam(me!(api.pdu_set_com_param(h_mod, h_cll, &cp)))
                 }
-                Q::PduSetUniqueRespIdTable(h_mod, h_cll, table) => {
-                    R::PduSetUniqueRespIdTable(me!(api.pdu_set_unique_resp_id_table(h_mod, h_cll, &table)))
-                }
+                Q::PduSetUniqueRespIdTable(h_mod, h_cll, table) => R::PduSetUniqueRespIdTable(me!(
+                    api.pdu_set_unique_resp_id_table(h_mod, h_cll, &table)
+                )),
                 Q::PduStartComPrimitive(h_mod, h_cll, primitive_type, tag) => {
-                    R::PduStartComPrimitive(me!(
-                                api.pdu_start_com_primitive(
-                                    h_mod,
-                                    h_cll,
-                                    &primitive_type,
-                                    tag
-                                )
-                            ))
+                    R::PduStartComPrimitive(me!(api.pdu_start_com_primitive(
+                        h_mod,
+                        h_cll,
+                        &primitive_type,
+                        tag
+                    )))
                 }
                 Q::PduUnlockResource(h_mod, h_cll, mask) => {
                     R::PduUnlockResource(me!(api.pdu_unlock_resource(h_mod, h_cll, mask)))
@@ -360,8 +305,8 @@ impl PduAsyncWorker {
 
 impl Drop for PduAsyncWorker {
     fn drop(&mut self) {
-        self.dropped.set(()).expect(
-            "internal error: shutdown flag was already set"
-        ); // infallible
+        self.dropped
+            .set(())
+            .expect("internal error: shutdown flag was already set"); // infallible
     }
 }
