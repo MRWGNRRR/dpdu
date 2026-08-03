@@ -132,7 +132,11 @@ impl Display for PtrRepr {
         if self.0 == 0 {
             write!(f, "<nullptr>")
         } else {
-            write!(f, "0x{:X}", self.0)
+            write!(
+                f,
+                "{:p}",
+                self.0 as *const (),
+            )
         }
     }
 }
