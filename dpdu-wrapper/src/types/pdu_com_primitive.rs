@@ -7,6 +7,7 @@ use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
 use crate::types::{PduCllHandle, PduCopHandle, PduModuleHandle, PduUniqueCopTag};
 use crate::utils::NonClonable;
 use crate::worker::{PduAsyncWorker, Query};
+use bytes::Bytes;
 use dpdu_api_types::{PduCopt, PduErrorEvt, PduStatus};
 use parking_lot::Mutex;
 use std::sync::{Arc, Once, OnceLock, Weak};
@@ -73,20 +74,8 @@ pub struct PduPrimitive {
     /// See the [`PduCopData`] structure.
     pub(crate) h_cop: OnceLock<PduCopHandle>,
 
-    /// Type of the communication primitive operation.
-    ///
-    /// Defines the operation that will be executed by the D-PDU API, for example
-    /// send/receive, delay, or other supported primitive types.
-    pub(crate) cop_type: PduCopt,
-
-    /// Payload data transmitted by the communication primitive.
-    ///
-    /// This field is used for transmit operations. For other primitive types,
-    /// its meaning depends on the value of [`cop_type`].
-    pub(crate) data: Vec<u8>,
-
-    /// Parameters with which this primitive was created.
-    pub(crate) params: Option<PduPrimitiveParams>,
+    /// A way to create communication primitives.
+    pub(crate) primitive_type: PrimitiveType,
 
     /// Event channel sender owned by [`PduPrimitive`].
     ///
@@ -135,8 +124,7 @@ pub struct PduPrimitive {
 
 impl PartialEq for PduPrimitive {
     fn eq(&self, other: &Self) -> bool {
-        self.api.unique_tag == other.api.unique_tag
-            && self.unique_tag == other.unique_tag
+        self.api.unique_tag == other.api.unique_tag && self.unique_tag == other.unique_tag
     }
 }
 
@@ -165,8 +153,8 @@ impl PduPrimitive {
     ///
     /// The parameters are not present when the primitive was created without
     /// explicitly provided configuration.
-    pub fn get_params(&self) -> Option<&PduPrimitiveParams> {
-        self.params.as_ref()
+    pub fn get_primitive_type(&self) -> &PrimitiveType {
+        &self.primitive_type
     }
 
     /// Returns the unique tag assigned to this communication primitive by the D-PDU API.
@@ -264,12 +252,11 @@ impl PduPrimitive {
         self.assert_not_started()?;
 
         let _sync_guard = self.pdu_sync.lock();
+
         let h_cop = match self.api.pdu_start_com_primitive(
             self.h_mod,
             self.h_cll,
-            self.cop_type,
-            &self.data,
-            self.get_params(),
+            &self.primitive_type,
             Some(self.unique_tag),
         ) {
             Ok(v) => v,
@@ -309,9 +296,7 @@ impl PduPrimitive {
                     .pdu_start_com_primitive(
                         self.h_mod,
                         self.h_cll,
-                        self.cop_type,
-                        self.data.clone(),
-                        self.get_params().cloned(),
+                        self.primitive_type.clone(),
                         Some(self.unique_tag),
                     )
                     .await
@@ -426,10 +411,10 @@ impl PduPrimitive {
                     if !status.is_alive() {
                         break;
                     }
-                },
+                }
                 PrimitiveEvent::Error(error) => {
                     return Err(PrimitiveError::CommunicationError(error));
-                },
+                }
                 _ => {}
             }
         }
@@ -454,10 +439,10 @@ impl PduPrimitive {
                     if !status.is_alive() {
                         break;
                     }
-                },
+                }
                 PrimitiveEvent::Error(error) => {
                     return Err(PrimitiveError::CommunicationError(error));
-                },
+                }
                 _ => {}
             }
         }
@@ -815,9 +800,8 @@ impl CopStatus {
 
 /// Parameters used to configure a D-PDU communication primitive.
 #[derive(Debug, Clone)]
-pub struct PduPrimitiveParams {
-    /// Cycle time in milliseconds for cyclic transmission or the delay
-    /// duration for a `PDU_COPT_DELAY` primitive.
+pub struct PrimitiveParams {
+    /// Cycle time in milliseconds for cyclic transmission.
     pub time: u32,
 
     /// Number of transmission cycles.
@@ -838,20 +822,15 @@ pub struct PduPrimitiveParams {
     pub expected_responses: Vec<ExpectedResponse>,
 }
 
-impl Default for PduPrimitiveParams {
+impl Default for PrimitiveParams {
     fn default() -> Self {
         Self {
             time: 0,
-            send_cycles: SendCycles::default(),
-            receive_cycles: ReceiveCycles::default(),
+            send_cycles: SendCycles::Normal(0),
+            receive_cycles: ReceiveCycles::Normal(0),
             temp_param_update: ComParamBuffer::default(),
             tx_flag: TransmitFlags::default(),
-            expected_responses: vec![ExpectedResponse {
-                response_type: ResponseType::Positive,
-                acceptance_id: 1,
-                mask_data: MaskData::default(),
-                unique_response_ids: vec![],
-            }],
+            expected_responses: vec![],
         }
     }
 }
@@ -1261,6 +1240,98 @@ impl TryFrom<PduStatus> for PrimitiveStatus {
             PduStatus::CopstCancelled => Ok(Self::Cancelled),
             PduStatus::CopstFinished => Ok(Self::Finished),
             status => Err(InvalidPrimitiveStatusError(status)),
+        }
+    }
+}
+
+/// Variant for creating a [`PduPrimitive`].
+#[derive(Debug, Clone)]
+pub enum PrimitiveType {
+    /// `PDU_COPT_START_COMM`
+    StartComm {
+        /// Payload data to send.
+        data: Bytes,
+
+        /// Primitive parameters.
+        params: PrimitiveParams,
+    },
+
+    /// `PDU_COPT_SEND_RECV`
+    SendRecv {
+        /// Payload data to send.
+        data: Bytes,
+
+        /// Primitive parameters.
+        params: PrimitiveParams,
+    },
+
+    /// `PDU_COPT_STOP_COMM`
+    StopComm {
+        /// Payload data to send.
+        data: Bytes,
+
+        /// Primitive parameters.
+        params: PrimitiveParams,
+    },
+
+    /// `PDU_COPT_UPDATE_PARAM`
+    UpdateParam,
+
+    /// `PDU_COPT_RESTORE_PARAM`
+    RestoreParam,
+
+    /// `PDU_COPT_DELAY`
+    Delay {
+        /// The delay duration for a `PDU_COPT_DELAY` primitive in milliseconds.
+        time: u32,
+    },
+}
+
+impl PrimitiveType {
+    /// Converts this type into a [`PduCopt`].
+    pub fn to_native_type(&self) -> PduCopt {
+        match self {
+            Self::StartComm { .. } => PduCopt::StartComm,
+            Self::SendRecv { .. } => PduCopt::SendRecv,
+            Self::StopComm { .. } => PduCopt::StopComm,
+            Self::UpdateParam => PduCopt::UpdateParam,
+            Self::RestoreParam => PduCopt::RestoreParam,
+            Self::Delay { .. } => PduCopt::Delay,
+        }
+    }
+
+    /// Returns the data buffer associated with this primitive operation.
+    ///
+    /// Data is available only for primitives that transfer payload data:
+    /// - [`StartComm`](PrimitiveType::StartComm),
+    /// - [`SendRecv`](PrimitiveType::SendRecv),
+    /// - [`StopComm`](PrimitiveType::StopComm).
+    ///
+    /// Returns [`None`] for primitives that do not contain a data payload.
+    pub fn get_data(&self) -> Option<&[u8]> {
+        match self {
+            Self::StartComm { data, .. } => Some(data.as_ref()),
+            Self::SendRecv { data, .. } => Some(data.as_ref()),
+            Self::StopComm { data, .. } => Some(data.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Returns the communication parameters associated with this primitive.
+    ///
+    /// Parameters are available only for communication primitives:
+    /// - [`StartComm`](PrimitiveType::StartComm),
+    /// - [`SendRecv`](PrimitiveType::SendRecv),
+    /// - [`StopComm`](PrimitiveType::StopComm).
+    ///
+    /// Returns [`None`] for primitives that do not require communication
+    /// parameters.
+    pub fn get_params(&self) -> Option<&PrimitiveParams> {
+        match self {
+            Self::StartComm { params, .. } => Some(params),
+            Self::SendRecv { params, .. } => Some(params),
+            Self::StopComm { params, .. } => Some(params),
+            _ => None,
         }
     }
 }

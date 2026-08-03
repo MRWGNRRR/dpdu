@@ -6,14 +6,15 @@ use crate::types::PduUniqueRespIdentifier;
 use cfg_if::cfg_if;
 use rand::RngExt;
 use std::ffi::{CStr, c_char, c_void};
+use std::fmt::{Debug, Display, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Cursor, Read, Seek};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use std::ops::{Deref};
+use std::ops::Deref;
 use std::path::Path;
-use std::ptr;
 use std::ptr::NonNull;
+use std::{fmt, ptr};
 use winreg::RegKey;
 use winreg::enums::HKEY_LOCAL_MACHINE;
 
@@ -227,6 +228,52 @@ pub const fn get_winreg_arch_flags() -> u32 {
             enums::KEY_READ | enums::KEY_WOW64_32KEY
         } else {
             compile_error!("Unsupported target architecture");
+        }
+    }
+}
+
+/// Helper type for formatting raw pointers in logs.
+///
+/// Displays a pointer address in hexadecimal format (`0x...`)
+/// or `<nullptr>` for null pointers.
+///
+/// This type stores only the pointer address and does not retain
+/// ownership or provide access to the underlying memory.
+#[derive(Clone, Copy)]
+pub struct PtrRepr(usize);
+
+impl<T> From<*const T> for PtrRepr {
+    /// Creates a pointer representation from a constant raw pointer.
+    fn from(ptr: *const T) -> Self {
+        Self(ptr as usize)
+    }
+}
+
+impl<T> From<*mut T> for PtrRepr {
+    /// Creates a pointer representation from a mutable raw pointer.
+    fn from(ptr: *mut T) -> Self {
+        Self(ptr as usize)
+    }
+}
+
+impl Debug for PtrRepr {
+    /// Debugs the pointer as a hexadecimal address.
+    ///
+    /// Null pointers are represented as `<nullptr>`.
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for PtrRepr {
+    /// Formats the pointer as a hexadecimal address.
+    ///
+    /// Null pointers are represented as `<nullptr>`.
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.0 == 0 {
+            write!(f, "<nullptr>")
+        } else {
+            write!(f, "{:p}", self.0 as *const (),)
         }
     }
 }

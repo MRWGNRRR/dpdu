@@ -1,7 +1,7 @@
 use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, PduCllData};
 use crate::types::pdu_com_param::PduComParam;
 use crate::types::pdu_com_param::table::PduComParamTable;
-use crate::types::pdu_com_primitive::PduPrimitiveParams;
+use crate::types::pdu_com_primitive::PrimitiveType;
 use crate::types::pdu_error::{PduErrorData, PduLastErrorTarget};
 use crate::types::pdu_event::{PduEvent, PduEventTarget};
 use crate::types::pdu_io_ctl::{PduIoCtlCommand, PduIoCtlData, PduIoCtlTarget};
@@ -19,7 +19,7 @@ use crate::types::{
     PduCllHandle, PduCopHandle, PduModuleHandle, PduObjectId, PduUniqueCllTag, PduUniqueCopTag,
 };
 use crate::utils::NaivePtr;
-use dpdu_api_types::{EventCallbackFn, IoFilterData, PduCopt, PduObjt, PduQueueMode};
+use dpdu_api_types::{EventCallbackFn, IoFilterData, PduObjt, PduQueueMode};
 use dpdu_wrapper_support::declare_worker_rpc;
 
 declare_worker_rpc! {
@@ -221,9 +221,7 @@ declare_worker_rpc! {
     PduStartComPrimitive => pdu_start_com_primitive(
         h_mod: PduModuleHandle,
         h_cll: PduCllHandle,
-        cop_type: PduCopt,
-        data: @dedicated_ref Vec<u8>,
-        params: @dedicated_opt_ref Option<PduPrimitiveParams>,
+        primitive_type: @dedicated_ref PrimitiveType,
         tag: Option<PduUniqueCopTag>
     ) -> PduCopHandle,
 

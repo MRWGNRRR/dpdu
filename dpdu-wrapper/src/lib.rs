@@ -10,6 +10,7 @@ pub mod worker;
 
 use crate::api::PduApi;
 use crate::worker::PduAsyncWorker;
+pub use bytes;
 pub use libloading;
 
 #[derive(Debug)]

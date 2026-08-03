@@ -4,8 +4,8 @@ use crate::error::{GeneralError, GeneralResult};
 use crate::handle_manager::PduHandleManager;
 use crate::types::pdu_com_param::table::{IntoPduComParam, MapTarget, PduComParamTable, SetTarget};
 use crate::types::pdu_com_primitive::{
-    ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PduPrimitiveParams,
-    PrimitiveStatusStore, ReceiveCycles, ResponseType, SendCycles, TransmitFlags,
+    ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PrimitiveParams,
+    PrimitiveStatusStore, PrimitiveType, ReceiveCycles, ResponseType, SendCycles, TransmitFlags,
 };
 use crate::types::pdu_event::{ErrorEventStore, PduEvent, StopReceive};
 use crate::types::pdu_resource::{BusSource, ProtocolSource, TargetPin};
@@ -14,7 +14,8 @@ use crate::types::{PduCllHandle, PduModuleHandle, PduObjectId, PduUniqueCllTag, 
 use crate::utils::can::{CanFrame, RawCanPrimitiveBuilderExt};
 use crate::utils::{NonClonable, random_non_zero_usize};
 use crate::worker::{PduAsyncWorker, Query};
-use dpdu_api_types::{PduCopt, PduError, PduStatus};
+use bytes::Bytes;
+use dpdu_api_types::{PduError, PduStatus};
 use parking_lot::Mutex;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
@@ -71,8 +72,7 @@ pub struct PduLogicalLink {
 
 impl PartialEq for PduLogicalLink {
     fn eq(&self, other: &Self) -> bool {
-        self.api.unique_tag == other.api.unique_tag
-            && self.unique_tag == other.unique_tag
+        self.api.unique_tag == other.api.unique_tag && self.unique_tag == other.unique_tag
     }
 }
 
@@ -203,9 +203,7 @@ impl PduLogicalLink {
 
     pub fn create_primitive(
         &self,
-        cop_type: PduCopt,
-        data: &[u8],
-        params: Option<&PduPrimitiveParams>,
+        primitive_type: PrimitiveType,
         events_queue_size: Option<usize>,
     ) -> Arc<PduPrimitive> {
         let events_queue_size = events_queue_size.unwrap_or(COP_EVENTS_QUEUE_SIZE);
@@ -279,14 +277,12 @@ impl PduLogicalLink {
         let cop = Arc::new_cyclic(|weak| PduPrimitive {
             me: weak.clone(),
             api: self.api.clone(),
-            worker: OnceLock::default(),
+            worker: self.worker.clone(),
             unique_tag,
             h_mod,
             h_cll,
             h_cop: OnceLock::new(),
-            cop_type: cop_type.to_owned(),
-            data: data.to_vec(),
-            params: params.cloned().into(),
+            primitive_type,
             pdu_event_tx: NonClonable(pdu_event_tx),
             error_store: primitive_error_store,
             primitive_event_tx,
@@ -308,38 +304,41 @@ impl PduLogicalLink {
     }
 
     pub fn create_start_comm_primitive(&self, builder: StartComm) -> Arc<PduPrimitive> {
+        let data = Bytes::copy_from_slice(&builder.data);
+        let params = builder.build();
+
         self.create_primitive(
-            PduCopt::StartComm,
-            &builder.data,
-            Some(&builder.build()),
+            PrimitiveType::StartComm { data, params },
             builder.events_queue_size,
         )
     }
 
     pub fn create_stop_comm_primitive(&self, builder: StopComm) -> Arc<PduPrimitive> {
+        let data = Bytes::copy_from_slice(&builder.data);
+        let params = builder.build();
+
         self.create_primitive(
-            PduCopt::StopComm,
-            &builder.data,
-            Some(&builder.build()),
+            PrimitiveType::StopComm { data, params },
             builder.events_queue_size,
         )
     }
 
     pub fn create_send_recv_primitive(&self, builder: SendRecv) -> Arc<PduPrimitive> {
+        let data = Bytes::copy_from_slice(&builder.data);
+        let params = builder.build();
+
         self.create_primitive(
-            PduCopt::SendRecv,
-            &builder.data,
-            Some(&builder.build()),
+            PrimitiveType::SendRecv { data, params },
             builder.events_queue_size,
         )
     }
 
     pub fn create_update_param_primitive(&self) -> Arc<PduPrimitive> {
-        self.create_primitive(PduCopt::UpdateParam, &[], None, None)
+        self.create_primitive(PrimitiveType::UpdateParam, None)
     }
 
     pub fn create_restore_param_primitive(&self) -> Arc<PduPrimitive> {
-        self.create_primitive(PduCopt::RestoreParam, &[], None, None)
+        self.create_primitive(PrimitiveType::RestoreParam, None)
     }
 
     pub fn blocking_set_com_params(&self, set_target: impl Into<SetTarget>) -> GeneralResult<()> {
@@ -561,7 +560,7 @@ impl Drop for PduLogicalLink {
         debug!(
             h_mod = self.get_module_handle(),
             h_cll = self.get_cll_handle(),
-            "Disconnecting the PduComLogicalLink via destructor..."
+            "Disconnecting the PduLogicalLink via destructor..."
         );
 
         match self.worker.get() {
@@ -812,7 +811,7 @@ mod sealed {
 }
 
 trait CopParamsBuilder: sealed::Sealed {
-    fn build(&self) -> PduPrimitiveParams;
+    fn build(&self) -> PrimitiveParams;
 }
 
 #[derive(Debug, Default)]
@@ -871,8 +870,8 @@ impl StartComm {
 
 impl sealed::Sealed for StartComm {}
 impl CopParamsBuilder for StartComm {
-    fn build(&self) -> PduPrimitiveParams {
-        let mut params = PduPrimitiveParams::default();
+    fn build(&self) -> PrimitiveParams {
+        let mut params = PrimitiveParams::default();
 
         params.send_cycles = SendCycles::Normal(if self.data.len() > 0 { 1 } else { 0 });
         params.receive_cycles = self.receive_cycles.clone();
@@ -943,8 +942,8 @@ impl StopComm {
 
 impl sealed::Sealed for StopComm {}
 impl CopParamsBuilder for StopComm {
-    fn build(&self) -> PduPrimitiveParams {
-        let mut params = PduPrimitiveParams::default();
+    fn build(&self) -> PrimitiveParams {
+        let mut params = PrimitiveParams::default();
 
         params.send_cycles = SendCycles::Normal(if self.data.len() > 0 { 1 } else { 0 });
         params.receive_cycles = ReceiveCycles::Normal(if self.receive { 1 } else { 0 });
@@ -1105,8 +1104,8 @@ impl RawCanPrimitiveBuilderExt for SendRecv {
 
 impl sealed::Sealed for SendRecv {}
 impl CopParamsBuilder for SendRecv {
-    fn build(&self) -> PduPrimitiveParams {
-        let mut params = PduPrimitiveParams::default();
+    fn build(&self) -> PrimitiveParams {
+        let mut params = PrimitiveParams::default();
 
         params.send_cycles = self.send_cycles.clone();
         params.receive_cycles = self.receive_cycles.clone();
