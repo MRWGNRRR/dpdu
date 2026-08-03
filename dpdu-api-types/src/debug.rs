@@ -1,9 +1,18 @@
-use std::{fmt, slice};
-use std::ffi::{c_char, c_void, CStr};
+use crate::{
+    CopCtrlData, EcuUniqueRespData, ErrorData, EthSwitchState, EventItem, ExpRespData, ExtraInfo,
+    FlagData, InfoData, IoByteArrayData, IoEntityAddressData, IoEntityStatusData,
+    IoEventQueuePropertyData, IoFilter, IoFilterData, IoProgVoltageData, IpAddrInfo, ModuleData,
+    ModuleItem, ParamByteFieldData, ParamItem, ParamLongFieldData, ParamStructAccessTiming,
+    ParamStructFieldData, ParamStructSessionTiming, PduCpst, PduDataItem, PduIt, PduItem, PduPt,
+    PduStatus, PinData, ResultData, RscConflictData, RscConflictItem, RscData, RscIdItem,
+    RscIdItemData, RscStatusData, RscStatusItem, UniqueRespIdTableItem, VehicleIdRequest,
+    VersionData,
+};
+use parking_lot::RwLock;
+use std::ffi::{CStr, c_char, c_void};
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::OnceLock;
-use parking_lot::RwLock;
-use crate::{CopCtrlData, EcuUniqueRespData, ErrorData, EthSwitchState, EventItem, ExpRespData, ExtraInfo, FlagData, InfoData, IoByteArrayData, IoEntityAddressData, IoEntityStatusData, IoEventQueuePropertyData, IoFilter, IoFilterData, IoProgVoltageData, IpAddrInfo, ModuleData, ModuleItem, ParamByteFieldData, ParamItem, ParamLongFieldData, ParamStructAccessTiming, ParamStructFieldData, ParamStructSessionTiming, PduCpst, PduDataItem, PduIt, PduItem, PduPt, PduStatus, PinData, ResultData, RscConflictData, RscConflictItem, RscData, RscIdItem, RscIdItemData, RscStatusData, RscStatusItem, UniqueRespIdTableItem, VehicleIdRequest, VersionData};
+use std::{fmt, slice};
 
 /// Global configuration for debug formatting.
 #[allow(missing_copy_implementations)]
@@ -35,7 +44,7 @@ impl Default for DebugOptions {
         Self {
             max_collection_items: Some(32),
             max_byte_items: Some(32),
-            max_str_len: Some(32)
+            max_str_len: Some(32),
         }
     }
 }
@@ -44,9 +53,7 @@ static DEBUG_OPTIONS: OnceLock<RwLock<DebugOptions>> = OnceLock::new();
 
 #[allow(missing_docs)]
 fn debug_options() -> &'static RwLock<DebugOptions> {
-    DEBUG_OPTIONS.get_or_init(|| {
-        RwLock::new(DebugOptions::default())
-    })
+    DEBUG_OPTIONS.get_or_init(|| RwLock::new(DebugOptions::default()))
 }
 
 /// Updates global debug formatting options and returns old options.
@@ -306,9 +313,7 @@ impl Debug for CStrDebug {
                     }
                 }
 
-                Err(_) => {
-                    DebugByteSlice::new(bytes).fmt(f)
-                }
+                Err(_) => DebugByteSlice::new(bytes).fmt(f),
             }
         }
     }
@@ -318,7 +323,8 @@ impl Debug for CStrDebug {
 pub struct PduItemDebug<'a>(&'a PduItem);
 
 impl DebugView for PduItem {
-    type Output<'a> = PduItemDebug<'a>
+    type Output<'a>
+        = PduItemDebug<'a>
     where
         Self: 'a;
 
@@ -339,7 +345,8 @@ impl<'a> Debug for PduItemDebug<'a> {
 pub struct EventItemDebug<'a>(&'a EventItem);
 
 impl DebugView for EventItem {
-    type Output<'a> = EventItemDebug<'a>
+    type Output<'a>
+        = EventItemDebug<'a>
     where
         Self: 'a;
 
@@ -355,36 +362,17 @@ impl<'a> Debug for EventItemDebug<'a> {
         let mut debug = f.debug_struct("EventItem");
 
         debug
-            .field(
-                "item_type",
-                &item.item_type,
-            )
+            .field("item_type", &item.item_type)
             .field(
                 "item_type_value",
                 &format_args!("{:#010X}", item.item_type as u32),
             )
-            .field(
-                "h_cop",
-                &item.h_cop,
-            )
-            .field(
-                "p_cop_tag",
-                &PtrRepr::from(item.p_cop_tag),
-            )
-            .field(
-                "timestamp",
-                &item.timestamp,
-            )
-            .field(
-                "p_data",
-                &PtrRepr::from(item.p_data),
-            );
+            .field("h_cop", &item.h_cop)
+            .field("p_cop_tag", &PtrRepr::from(item.p_cop_tag))
+            .field("timestamp", &item.timestamp)
+            .field("p_data", &PtrRepr::from(item.p_data));
 
-        debug_pdu_item_data(
-            &mut debug,
-            item.item_type,
-            item.p_data,
-        );
+        debug_pdu_item_data(&mut debug, item.item_type, item.p_data);
 
         debug.finish()
     }
@@ -394,7 +382,8 @@ impl<'a> Debug for EventItemDebug<'a> {
 pub struct PduDataItemDebug<'a>(&'a PduDataItem);
 
 impl DebugView for PduDataItem {
-    type Output<'a> = PduDataItemDebug<'a>
+    type Output<'a>
+        = PduDataItemDebug<'a>
     where
         Self: 'a;
 
@@ -415,16 +404,9 @@ impl<'a> Debug for PduDataItemDebug<'a> {
                 "item_type_value",
                 &format_args!("{:#010X}", item.item_type as u32),
             )
-            .field(
-                "p_data",
-                &PtrRepr::from(item.p_data),
-            );
+            .field("p_data", &PtrRepr::from(item.p_data));
 
-        debug_pdu_item_data(
-            &mut debug,
-            item.item_type,
-            item.p_data,
-        );
+        debug_pdu_item_data(&mut debug, item.item_type, item.p_data);
 
         debug.finish()
     }
@@ -442,187 +424,113 @@ fn debug_pdu_item_data(
 
         match item_type {
             PduIt::IoUnum32 => {
-                debug.field(
-                    "data",
-                    &*(p_data as *const u32),
-                );
+                debug.field("data", &*(p_data as *const u32));
             }
 
             PduIt::IoProgVoltage => {
-                debug.field(
-                    "data",
-                    &*(p_data as *const u32),
-                );
+                debug.field("data", &*(p_data as *const u32));
             }
 
             PduIt::IoByteArray => {
-                let value =
-                    &*(p_data as *const IoByteArrayData);
+                let value = &*(p_data as *const IoByteArrayData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::IoFilter => {
-                let value =
-                    &*(p_data as *const IoFilter);
+                let value = &*(p_data as *const IoFilter);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::IoEventQueueProperty => {
-                let value =
-                    &*(p_data as *const IoEventQueuePropertyData);
+                let value = &*(p_data as *const IoEventQueuePropertyData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::RscStatus => {
-                let value =
-                    &*(p_data as *const RscStatusItem);
+                let value = &*(p_data as *const RscStatusItem);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::Param => {
-                let value =
-                    &*(p_data as *const ParamItem);
+                let value = &*(p_data as *const ParamItem);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::Result => {
-                let value =
-                    &*(p_data as *const ResultData);
+                let value = &*(p_data as *const ResultData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::Status => {
-                let value =
-                    *(p_data as *const PduStatus);
+                let value = *(p_data as *const PduStatus);
 
-                debug.field(
-                    "data",
-                    &value,
-                );
+                debug.field("data", &value);
             }
 
             PduIt::Error => {
-                let value =
-                    &*(p_data as *const ErrorData);
+                let value = &*(p_data as *const ErrorData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::Info => {
-                let value =
-                    &*(p_data as *const InfoData);
+                let value = &*(p_data as *const InfoData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::RscId => {
-                let value =
-                    &*(p_data as *const RscIdItem);
+                let value = &*(p_data as *const RscIdItem);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::RscConflict => {
-                let value =
-                    &*(p_data as *const RscConflictItem);
+                let value = &*(p_data as *const RscConflictItem);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::ModuleId => {
-                let value =
-                    &*(p_data as *const ModuleItem);
+                let value = &*(p_data as *const ModuleItem);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::UniqueRespIdTable => {
-                let value =
-                    &*(p_data as *const UniqueRespIdTableItem);
+                let value = &*(p_data as *const UniqueRespIdTableItem);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::IoVehicleIdRequest => {
-                let value =
-                    &*(p_data as *const VehicleIdRequest);
+                let value = &*(p_data as *const VehicleIdRequest);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::EthSwitchState => {
-                let value =
-                    &*(p_data as *const EthSwitchState);
+                let value = &*(p_data as *const EthSwitchState);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::EntityAddress => {
-                let value =
-                    &*(p_data as *const IoEntityAddressData);
+                let value = &*(p_data as *const IoEntityAddressData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
 
             PduIt::EntityStatus => {
-                let value =
-                    &*(p_data as *const IoEntityStatusData);
+                let value = &*(p_data as *const IoEntityStatusData);
 
-                debug.field(
-                    "data",
-                    &value.debug_view(),
-                );
+                debug.field("data", &value.debug_view());
             }
         }
     }
@@ -632,7 +540,8 @@ fn debug_pdu_item_data(
 pub struct IoProgVoltageDataDebug<'a>(&'a IoProgVoltageData);
 
 impl DebugView for IoProgVoltageData {
-    type Output<'a> = IoProgVoltageDataDebug<'a>
+    type Output<'a>
+        = IoProgVoltageDataDebug<'a>
     where
         Self: 'a;
 
@@ -654,7 +563,8 @@ impl<'a> Debug for IoProgVoltageDataDebug<'a> {
 pub struct IoByteArrayDataDebug<'a>(&'a IoByteArrayData);
 
 impl DebugView for IoByteArrayData {
-    type Output<'a> = IoByteArrayDataDebug<'a>
+    type Output<'a>
+        = IoByteArrayDataDebug<'a>
     where
         Self: 'a;
 
@@ -671,17 +581,11 @@ impl<'a> Debug for IoByteArrayDataDebug<'a> {
 
         debug
             .field("data_size", &data.data_size)
-            .field(
-                "p_data",
-                &PtrRepr::from(data.p_data),
-            );
+            .field("p_data", &PtrRepr::from(data.p_data));
 
         unsafe {
             if !data.p_data.is_null() && data.data_size > 0 {
-                let bytes = slice::from_raw_parts(
-                    data.p_data,
-                    data.data_size as usize,
-                );
+                let bytes = slice::from_raw_parts(data.p_data, data.data_size as usize);
 
                 debug.field("data", &DebugByteSlice::new(bytes));
             }
@@ -695,7 +599,8 @@ impl<'a> Debug for IoByteArrayDataDebug<'a> {
 pub struct IoFilterDebug<'a>(&'a IoFilter);
 
 impl DebugView for IoFilter {
-    type Output<'a> = IoFilterDebug<'a>
+    type Output<'a>
+        = IoFilterDebug<'a>
     where
         Self: 'a;
 
@@ -711,28 +616,15 @@ impl<'a> Debug for IoFilterDebug<'a> {
         let mut debug = f.debug_struct("IoFilter");
 
         debug
-            .field(
-                "num_filter_entries",
-                &data.num_filter_entries,
-            )
-            .field(
-                "p_filter_data",
-                &PtrRepr::from(data.p_filter_data),
-            );
+            .field("num_filter_entries", &data.num_filter_entries)
+            .field("p_filter_data", &PtrRepr::from(data.p_filter_data));
 
         unsafe {
-            if !data.p_filter_data.is_null()
-                && data.num_filter_entries > 0
-            {
-                let filters = slice::from_raw_parts(
-                    data.p_filter_data,
-                    data.num_filter_entries as usize,
-                );
+            if !data.p_filter_data.is_null() && data.num_filter_entries > 0 {
+                let filters =
+                    slice::from_raw_parts(data.p_filter_data, data.num_filter_entries as usize);
 
-                debug.field(
-                    "filter_data",
-                    &DebugStructSlice::new(filters),
-                );
+                debug.field("filter_data", &DebugStructSlice::new(filters));
             }
         }
 
@@ -744,7 +636,8 @@ impl<'a> Debug for IoFilterDebug<'a> {
 pub struct IoFilterDataDebug<'a>(&'a IoFilterData);
 
 impl DebugView for IoFilterData {
-    type Output<'a> = IoFilterDataDebug<'a>
+    type Output<'a>
+        = IoFilterDataDebug<'a>
     where
         Self: 'a;
 
@@ -764,8 +657,14 @@ impl<'a> Debug for IoFilterDataDebug<'a> {
             .field("filter_type_value", &(data.filter_type as u32))
             .field("filter_number", &data.filter_number)
             .field("filter_compare_size", &data.filter_compare_size)
-            .field("filter_mask_msg", &DebugByteSlice::new(&data.filter_mask_msg))
-            .field("filter_pattern_msg", &DebugByteSlice::new(&data.filter_pattern_msg));
+            .field(
+                "filter_mask_msg",
+                &DebugByteSlice::new(&data.filter_mask_msg),
+            )
+            .field(
+                "filter_pattern_msg",
+                &DebugByteSlice::new(&data.filter_pattern_msg),
+            );
 
         debug.finish()
     }
@@ -775,7 +674,8 @@ impl<'a> Debug for IoFilterDataDebug<'a> {
 pub struct IoEventQueuePropertyDataDebug<'a>(&'a IoEventQueuePropertyData);
 
 impl DebugView for IoEventQueuePropertyData {
-    type Output<'a> = IoEventQueuePropertyDataDebug<'a>
+    type Output<'a>
+        = IoEventQueuePropertyDataDebug<'a>
     where
         Self: 'a;
 
@@ -793,7 +693,10 @@ impl<'a> Debug for IoEventQueuePropertyDataDebug<'a> {
         debug
             .field("queue_size", &data.queue_size)
             .field("queue_mode", &data.queue_mode)
-            .field("queue_mode_value", &format_args!("{:#010X}", data.queue_mode as u32));
+            .field(
+                "queue_mode_value",
+                &format_args!("{:#010X}", data.queue_mode as u32),
+            );
 
         debug.finish()
     }
@@ -803,7 +706,8 @@ impl<'a> Debug for IoEventQueuePropertyDataDebug<'a> {
 pub struct VehicleIdRequestDebug<'a>(&'a VehicleIdRequest);
 
 impl DebugView for VehicleIdRequest {
-    type Output<'a> = VehicleIdRequestDebug<'a>
+    type Output<'a>
+        = VehicleIdRequestDebug<'a>
     where
         Self: 'a;
 
@@ -833,23 +737,15 @@ impl<'a> Debug for VehicleIdRequestDebug<'a> {
                 "combination_mode_value",
                 &format_args!("{:#04X}", data.combination_mode as u8),
             )
-            .field(
-                "vehicle_discovery_time",
-                &data.vehicle_discovery_time,
-            )
-            .field(
-                "num_destination_addresses",
-                &data.num_destination_addresses,
-            )
+            .field("vehicle_discovery_time", &data.vehicle_discovery_time)
+            .field("num_destination_addresses", &data.num_destination_addresses)
             .field(
                 "destination_addresses",
                 &PtrRepr::from(data.destination_addresses),
             );
 
         unsafe {
-            if !data.destination_addresses.is_null()
-                && data.num_destination_addresses > 0
-            {
+            if !data.destination_addresses.is_null() && data.num_destination_addresses > 0 {
                 let addresses = slice::from_raw_parts(
                     data.destination_addresses,
                     data.num_destination_addresses as usize,
@@ -870,7 +766,8 @@ impl<'a> Debug for VehicleIdRequestDebug<'a> {
 pub struct IpAddrInfoDebug<'a>(&'a IpAddrInfo);
 
 impl DebugView for IpAddrInfo {
-    type Output<'a> = IpAddrInfoDebug<'a>
+    type Output<'a>
+        = IpAddrInfoDebug<'a>
     where
         Self: 'a;
 
@@ -886,14 +783,8 @@ impl<'a> Debug for IpAddrInfoDebug<'a> {
         let mut debug = f.debug_struct("IpAddrInfo");
 
         debug
-            .field(
-                "ip_version",
-                &data.ip_version,
-            )
-            .field(
-                "p_address",
-                &PtrRepr::from(data.p_address),
-            );
+            .field("ip_version", &data.ip_version)
+            .field("p_address", &PtrRepr::from(data.p_address));
 
         unsafe {
             if !data.p_address.is_null() {
@@ -904,15 +795,9 @@ impl<'a> Debug for IpAddrInfoDebug<'a> {
                 };
 
                 if size > 0 {
-                    let address = slice::from_raw_parts(
-                        data.p_address,
-                        size,
-                    );
+                    let address = slice::from_raw_parts(data.p_address, size);
 
-                    debug.field(
-                        "address",
-                        &DebugByteSlice::new(address),
-                    );
+                    debug.field("address", &DebugByteSlice::new(address));
                 }
             }
         }
@@ -925,7 +810,8 @@ impl<'a> Debug for IpAddrInfoDebug<'a> {
 pub struct EthSwitchStateDebug<'a>(&'a EthSwitchState);
 
 impl DebugView for EthSwitchState {
-    type Output<'a> = EthSwitchStateDebug<'a>
+    type Output<'a>
+        = EthSwitchStateDebug<'a>
     where
         Self: 'a;
 
@@ -941,14 +827,8 @@ impl<'a> Debug for EthSwitchStateDebug<'a> {
         let mut debug = f.debug_struct("EthSwitchState");
 
         debug
-            .field(
-                "eth_sense_state",
-                &data.eth_sense_state,
-            )
-            .field(
-                "eth_act_pin_num",
-                &data.eth_act_pin_num,
-            );
+            .field("eth_sense_state", &data.eth_sense_state)
+            .field("eth_act_pin_num", &data.eth_act_pin_num);
 
         debug.finish()
     }
@@ -958,7 +838,8 @@ impl<'a> Debug for EthSwitchStateDebug<'a> {
 pub struct RscStatusDataDebug<'a>(&'a RscStatusData);
 
 impl DebugView for RscStatusData {
-    type Output<'a> = RscStatusDataDebug<'a>
+    type Output<'a>
+        = RscStatusDataDebug<'a>
     where
         Self: 'a;
 
@@ -986,7 +867,8 @@ impl<'a> Debug for RscStatusDataDebug<'a> {
 pub struct RscStatusItemDebug<'a>(&'a RscStatusItem);
 
 impl DebugView for RscStatusItem {
-    type Output<'a> = RscStatusItemDebug<'a>
+    type Output<'a>
+        = RscStatusItemDebug<'a>
     where
         Self: 'a;
 
@@ -1007,28 +889,18 @@ impl<'a> Debug for RscStatusItemDebug<'a> {
                 "item_type_value",
                 &format_args!("{:#010X}", data.item_type as u32),
             )
-            .field(
-                "num_entries",
-                &data.num_entries,
-            )
+            .field("num_entries", &data.num_entries)
             .field(
                 "p_resource_status_data",
                 &PtrRepr::from(data.p_resource_status_data),
             );
 
         unsafe {
-            if !data.p_resource_status_data.is_null()
-                && data.num_entries > 0
-            {
-                let entries = slice::from_raw_parts(
-                    data.p_resource_status_data,
-                    data.num_entries as usize,
-                );
+            if !data.p_resource_status_data.is_null() && data.num_entries > 0 {
+                let entries =
+                    slice::from_raw_parts(data.p_resource_status_data, data.num_entries as usize);
 
-                debug.field(
-                    "resource_status_data",
-                    &DebugStructSlice::new(entries),
-                );
+                debug.field("resource_status_data", &DebugStructSlice::new(entries));
             }
         }
 
@@ -1040,7 +912,8 @@ impl<'a> Debug for RscStatusItemDebug<'a> {
 pub struct ParamItemDebug<'a>(&'a ParamItem);
 
 impl DebugView for ParamItem {
-    type Output<'a> = ParamItemDebug<'a>
+    type Output<'a>
+        = ParamItemDebug<'a>
     where
         Self: 'a;
 
@@ -1062,100 +935,61 @@ impl<'a> Debug for ParamItemDebug<'a> {
                 &format_args!("{:#010X}", data.item_type as u32),
             )
             .field("com_param_id", &data.com_param_id)
-            .field(
-                "com_param_data_type",
-                &data.com_param_data_type,
-            )
+            .field("com_param_data_type", &data.com_param_data_type)
             .field(
                 "com_param_data_type_value",
                 &format_args!("{:#010X}", data.com_param_data_type as u32),
             )
-            .field(
-                "com_param_class",
-                &data.com_param_class,
-            )
+            .field("com_param_class", &data.com_param_class)
             .field(
                 "com_param_class_value",
                 &format_args!("{:#010X}", data.com_param_class as u32),
             )
-            .field(
-                "p_com_param_data",
-                &PtrRepr::from(data.p_com_param_data),
-            );
+            .field("p_com_param_data", &PtrRepr::from(data.p_com_param_data));
 
         unsafe {
             if !data.p_com_param_data.is_null() {
                 match data.com_param_data_type {
                     PduPt::Unum8 => {
-                        debug.field(
-                            "data",
-                            &*(data.p_com_param_data as *const u8),
-                        );
+                        debug.field("data", &*(data.p_com_param_data as *const u8));
                     }
 
                     PduPt::Snum8 => {
-                        debug.field(
-                            "data",
-                            &*(data.p_com_param_data as *const i8),
-                        );
+                        debug.field("data", &*(data.p_com_param_data as *const i8));
                     }
 
                     PduPt::Unum16 => {
-                        debug.field(
-                            "data",
-                            &*(data.p_com_param_data as *const u16),
-                        );
+                        debug.field("data", &*(data.p_com_param_data as *const u16));
                     }
 
                     PduPt::Snum16 => {
-                        debug.field(
-                            "data",
-                            &*(data.p_com_param_data as *const i16),
-                        );
+                        debug.field("data", &*(data.p_com_param_data as *const i16));
                     }
 
                     PduPt::Unum32 => {
-                        debug.field(
-                            "data",
-                            &*(data.p_com_param_data as *const u32),
-                        );
+                        debug.field("data", &*(data.p_com_param_data as *const u32));
                     }
 
                     PduPt::Snum32 => {
-                        debug.field(
-                            "data",
-                            &*(data.p_com_param_data as *const i32),
-                        );
+                        debug.field("data", &*(data.p_com_param_data as *const i32));
                     }
 
                     PduPt::ByteField => {
-                        let value =
-                            &*(data.p_com_param_data as *const ParamByteFieldData);
+                        let value = &*(data.p_com_param_data as *const ParamByteFieldData);
 
-                        debug.field(
-                            "data",
-                            &ParamByteFieldDataDebug(value),
-                        );
+                        debug.field("data", &ParamByteFieldDataDebug(value));
                     }
 
                     PduPt::LongField => {
-                        let value =
-                            &*(data.p_com_param_data as *const ParamLongFieldData);
+                        let value = &*(data.p_com_param_data as *const ParamLongFieldData);
 
-                        debug.field(
-                            "data",
-                            &ParamLongFieldDataDebug(value),
-                        );
+                        debug.field("data", &ParamLongFieldDataDebug(value));
                     }
 
                     PduPt::StructField => {
-                        let value =
-                            &*(data.p_com_param_data as *const ParamStructFieldData);
+                        let value = &*(data.p_com_param_data as *const ParamStructFieldData);
 
-                        debug.field(
-                            "data",
-                            &ParamStructFieldDataDebug(value),
-                        );
+                        debug.field("data", &ParamStructFieldDataDebug(value));
                     }
                 }
             }
@@ -1169,7 +1003,8 @@ impl<'a> Debug for ParamItemDebug<'a> {
 pub struct ParamByteFieldDataDebug<'a>(&'a ParamByteFieldData);
 
 impl DebugView for ParamByteFieldData {
-    type Output<'a> = ParamByteFieldDataDebug<'a>
+    type Output<'a>
+        = ParamByteFieldDataDebug<'a>
     where
         Self: 'a;
 
@@ -1185,32 +1020,15 @@ impl<'a> Debug for ParamByteFieldDataDebug<'a> {
         let mut debug = f.debug_struct("ParamByteFieldData");
 
         debug
-            .field(
-                "param_max_len",
-                &data.param_max_len,
-            )
-            .field(
-                "param_act_len",
-                &data.param_act_len,
-            )
-            .field(
-                "p_data_array",
-                &PtrRepr::from(data.p_data_array),
-            );
+            .field("param_max_len", &data.param_max_len)
+            .field("param_act_len", &data.param_act_len)
+            .field("p_data_array", &PtrRepr::from(data.p_data_array));
 
         unsafe {
-            if !data.p_data_array.is_null()
-                && data.param_act_len > 0
-            {
-                let bytes = slice::from_raw_parts(
-                    data.p_data_array,
-                    data.param_act_len as usize,
-                );
+            if !data.p_data_array.is_null() && data.param_act_len > 0 {
+                let bytes = slice::from_raw_parts(data.p_data_array, data.param_act_len as usize);
 
-                debug.field(
-                    "data",
-                    &DebugByteSlice::new(bytes),
-                );
+                debug.field("data", &DebugByteSlice::new(bytes));
             }
         }
 
@@ -1222,7 +1040,8 @@ impl<'a> Debug for ParamByteFieldDataDebug<'a> {
 pub struct ParamLongFieldDataDebug<'a>(&'a ParamLongFieldData);
 
 impl DebugView for ParamLongFieldData {
-    type Output<'a> = ParamLongFieldDataDebug<'a>
+    type Output<'a>
+        = ParamLongFieldDataDebug<'a>
     where
         Self: 'a;
 
@@ -1238,32 +1057,15 @@ impl<'a> Debug for ParamLongFieldDataDebug<'a> {
         let mut debug = f.debug_struct("ParamLongFieldData");
 
         debug
-            .field(
-                "param_max_len",
-                &data.param_max_len,
-            )
-            .field(
-                "param_act_len",
-                &data.param_act_len,
-            )
-            .field(
-                "p_data_array",
-                &PtrRepr::from(data.p_data_array),
-            );
+            .field("param_max_len", &data.param_max_len)
+            .field("param_act_len", &data.param_act_len)
+            .field("p_data_array", &PtrRepr::from(data.p_data_array));
 
         unsafe {
-            if !data.p_data_array.is_null()
-                && data.param_act_len > 0
-            {
-                let values = slice::from_raw_parts(
-                    data.p_data_array,
-                    data.param_act_len as usize,
-                );
+            if !data.p_data_array.is_null() && data.param_act_len > 0 {
+                let values = slice::from_raw_parts(data.p_data_array, data.param_act_len as usize);
 
-                debug.field(
-                    "data",
-                    &DebugDwordSlice::new(values),
-                );
+                debug.field("data", &DebugDwordSlice::new(values));
             }
         }
 
@@ -1275,7 +1077,8 @@ impl<'a> Debug for ParamLongFieldDataDebug<'a> {
 pub struct ParamStructFieldDataDebug<'a>(&'a ParamStructFieldData);
 
 impl DebugView for ParamStructFieldData {
-    type Output<'a> = ParamStructFieldDataDebug<'a>
+    type Output<'a>
+        = ParamStructFieldDataDebug<'a>
     where
         Self: 'a;
 
@@ -1291,61 +1094,36 @@ impl<'a> Debug for ParamStructFieldDataDebug<'a> {
         let mut debug = f.debug_struct("ParamStructFieldData");
 
         debug
-            .field(
-                "com_param_struct_type",
-                &data.com_param_struct_type,
-            )
+            .field("com_param_struct_type", &data.com_param_struct_type)
             .field(
                 "com_param_struct_type_value",
-                &format_args!(
-                    "{:#010X}",
-                    data.com_param_struct_type as u32
-                ),
+                &format_args!("{:#010X}", data.com_param_struct_type as u32),
             )
-            .field(
-                "param_max_entries",
-                &data.param_max_entries,
-            )
-            .field(
-                "param_act_entries",
-                &data.param_act_entries,
-            )
-            .field(
-                "p_struct_array",
-                &PtrRepr::from(data.p_struct_array),
-            );
+            .field("param_max_entries", &data.param_max_entries)
+            .field("param_act_entries", &data.param_act_entries)
+            .field("p_struct_array", &PtrRepr::from(data.p_struct_array));
 
         unsafe {
-            if !data.p_struct_array.is_null()
-                && data.param_act_entries > 0
-            {
+            if !data.p_struct_array.is_null() && data.param_act_entries > 0 {
                 let total_len = data.param_act_entries as usize;
 
                 match data.com_param_struct_type {
                     PduCpst::SessionTiming => {
                         let values = slice::from_raw_parts(
-                            data.p_struct_array
-                                as *const ParamStructSessionTiming,
+                            data.p_struct_array as *const ParamStructSessionTiming,
                             total_len,
                         );
 
-                        debug.field(
-                            "structures",
-                            &DebugStructSlice::new(values),
-                        );
+                        debug.field("structures", &DebugStructSlice::new(values));
                     }
 
                     PduCpst::AccessTiming => {
                         let values = slice::from_raw_parts(
-                            data.p_struct_array
-                                as *const ParamStructAccessTiming,
+                            data.p_struct_array as *const ParamStructAccessTiming,
                             total_len,
                         );
 
-                        debug.field(
-                            "structures",
-                            &DebugStructSlice::new(values),
-                        );
+                        debug.field("structures", &DebugStructSlice::new(values));
                     }
                 }
             }
@@ -1359,7 +1137,8 @@ impl<'a> Debug for ParamStructFieldDataDebug<'a> {
 pub struct ParamStructSessionTimingDebug<'a>(&'a ParamStructSessionTiming);
 
 impl DebugView for ParamStructSessionTiming {
-    type Output<'a> = ParamStructSessionTimingDebug<'a>
+    type Output<'a>
+        = ParamStructSessionTimingDebug<'a>
     where
         Self: 'a;
 
@@ -1389,7 +1168,8 @@ impl<'a> Debug for ParamStructSessionTimingDebug<'a> {
 pub struct ParamStructAccessTimingDebug<'a>(&'a ParamStructAccessTiming);
 
 impl DebugView for ParamStructAccessTiming {
-    type Output<'a> = ParamStructAccessTimingDebug<'a>
+    type Output<'a>
+        = ParamStructAccessTimingDebug<'a>
     where
         Self: 'a;
 
@@ -1424,7 +1204,8 @@ impl<'a> Debug for ParamStructAccessTimingDebug<'a> {
 pub struct ModuleItemDebug<'a>(&'a ModuleItem);
 
 impl DebugView for ModuleItem {
-    type Output<'a> = ModuleItemDebug<'a>
+    type Output<'a>
+        = ModuleItemDebug<'a>
     where
         Self: 'a;
 
@@ -1445,30 +1226,16 @@ impl<'a> Debug for ModuleItemDebug<'a> {
                 "item_type_value",
                 &format_args!("{:#010X}", data.item_type as u32),
             )
-            .field(
-                "num_entries",
-                &data.num_entries,
-            )
-            .field(
-                "p_module_data",
-                &PtrRepr::from(data.p_module_data),
-            );
+            .field("num_entries", &data.num_entries)
+            .field("p_module_data", &PtrRepr::from(data.p_module_data));
 
         unsafe {
-            if !data.p_module_data.is_null()
-                && data.num_entries > 0
-            {
+            if !data.p_module_data.is_null() && data.num_entries > 0 {
                 let total_len = data.num_entries as usize;
 
-                let modules = slice::from_raw_parts(
-                    data.p_module_data,
-                    total_len,
-                );
+                let modules = slice::from_raw_parts(data.p_module_data, total_len);
 
-                debug.field(
-                    "module_data",
-                    &DebugStructSlice::new(modules),
-                );
+                debug.field("module_data", &DebugStructSlice::new(modules));
             }
         }
 
@@ -1480,7 +1247,8 @@ impl<'a> Debug for ModuleItemDebug<'a> {
 pub struct ModuleDataDebug<'a>(&'a ModuleData);
 
 impl DebugView for ModuleData {
-    type Output<'a> = ModuleDataDebug<'a>
+    type Output<'a>
+        = ModuleDataDebug<'a>
     where
         Self: 'a;
 
@@ -1496,14 +1264,8 @@ impl<'a> Debug for ModuleDataDebug<'a> {
         let mut debug = f.debug_struct("ModuleData");
 
         debug
-            .field(
-                "module_type_id",
-                &data.module_type_id,
-            )
-            .field(
-                "h_mod",
-                &data.h_mod,
-            )
+            .field("module_type_id", &data.module_type_id)
+            .field("h_mod", &data.h_mod)
             .field(
                 "vendor_module_name",
                 &CStrDebug::new(data.vendor_module_name),
@@ -1512,10 +1274,7 @@ impl<'a> Debug for ModuleDataDebug<'a> {
                 "vendor_additional_info",
                 &CStrDebug::new(data.vendor_additional_info),
             )
-            .field(
-                "status",
-                &data.status,
-            )
+            .field("status", &data.status)
             .field(
                 "status_value",
                 &format_args!("{:#010X}", data.status as u32),
@@ -1529,7 +1288,8 @@ impl<'a> Debug for ModuleDataDebug<'a> {
 pub struct RscIdItemDebug<'a>(&'a RscIdItem);
 
 impl DebugView for RscIdItem {
-    type Output<'a> = RscIdItemDebug<'a>
+    type Output<'a>
+        = RscIdItemDebug<'a>
     where
         Self: 'a;
 
@@ -1550,30 +1310,16 @@ impl<'a> Debug for RscIdItemDebug<'a> {
                 "item_type_value",
                 &format_args!("{:#010X}", data.item_type as u32),
             )
-            .field(
-                "num_modules",
-                &data.num_modules,
-            )
-            .field(
-                "p_id_item_data",
-                &PtrRepr::from(data.p_id_item_data),
-            );
+            .field("num_modules", &data.num_modules)
+            .field("p_id_item_data", &PtrRepr::from(data.p_id_item_data));
 
         unsafe {
-            if !data.p_id_item_data.is_null()
-                && data.num_modules > 0
-            {
+            if !data.p_id_item_data.is_null() && data.num_modules > 0 {
                 let total_len = data.num_modules as usize;
 
-                let modules = slice::from_raw_parts(
-                    data.p_id_item_data,
-                    total_len,
-                );
+                let modules = slice::from_raw_parts(data.p_id_item_data, total_len);
 
-                debug.field(
-                    "id_item_data",
-                    &DebugStructSlice::new(modules),
-                );
+                debug.field("id_item_data", &DebugStructSlice::new(modules));
             }
         }
 
@@ -1585,7 +1331,8 @@ impl<'a> Debug for RscIdItemDebug<'a> {
 pub struct RscIdItemDataDebug<'a>(&'a RscIdItemData);
 
 impl DebugView for RscIdItemData {
-    type Output<'a> = RscIdItemDataDebug<'a>
+    type Output<'a>
+        = RscIdItemDataDebug<'a>
     where
         Self: 'a;
 
@@ -1601,34 +1348,20 @@ impl<'a> Debug for RscIdItemDataDebug<'a> {
         let mut debug = f.debug_struct("RscIdItemData");
 
         debug
-            .field(
-                "h_mod",
-                &data.h_mod,
-            )
-            .field(
-                "num_ids",
-                &data.num_ids,
-            )
+            .field("h_mod", &data.h_mod)
+            .field("num_ids", &data.num_ids)
             .field(
                 "p_resource_id_array",
                 &PtrRepr::from(data.p_resource_id_array),
             );
 
         unsafe {
-            if !data.p_resource_id_array.is_null()
-                && data.num_ids > 0
-            {
+            if !data.p_resource_id_array.is_null() && data.num_ids > 0 {
                 let total_len = data.num_ids as usize;
 
-                let ids = slice::from_raw_parts(
-                    data.p_resource_id_array,
-                    total_len,
-                );
+                let ids = slice::from_raw_parts(data.p_resource_id_array, total_len);
 
-                debug.field(
-                    "resource_ids",
-                    &DebugDwordSlice::new(ids),
-                );
+                debug.field("resource_ids", &DebugDwordSlice::new(ids));
             }
         }
 
@@ -1640,7 +1373,8 @@ impl<'a> Debug for RscIdItemDataDebug<'a> {
 pub struct RscDataDebug<'a>(&'a RscData);
 
 impl DebugView for RscData {
-    type Output<'a> = RscDataDebug<'a>
+    type Output<'a>
+        = RscDataDebug<'a>
     where
         Self: 'a;
 
@@ -1656,38 +1390,18 @@ impl<'a> Debug for RscDataDebug<'a> {
         let mut debug = f.debug_struct("RscData");
 
         debug
-            .field(
-                "bus_type_id",
-                &data.bus_type_id,
-            )
-            .field(
-                "protocol_id",
-                &data.protocol_id,
-            )
-            .field(
-                "num_pin_data",
-                &data.num_pin_data,
-            )
-            .field(
-                "p_dlc_pin_data",
-                &PtrRepr::from(data.p_dlc_pin_data),
-            );
+            .field("bus_type_id", &data.bus_type_id)
+            .field("protocol_id", &data.protocol_id)
+            .field("num_pin_data", &data.num_pin_data)
+            .field("p_dlc_pin_data", &PtrRepr::from(data.p_dlc_pin_data));
 
         unsafe {
-            if !data.p_dlc_pin_data.is_null()
-                && data.num_pin_data > 0
-            {
+            if !data.p_dlc_pin_data.is_null() && data.num_pin_data > 0 {
                 let total_len = data.num_pin_data as usize;
 
-                let pins = slice::from_raw_parts(
-                    data.p_dlc_pin_data,
-                    total_len,
-                );
+                let pins = slice::from_raw_parts(data.p_dlc_pin_data, total_len);
 
-                debug.field(
-                    "pin_data",
-                    &DebugStructSlice::new(pins),
-                );
+                debug.field("pin_data", &DebugStructSlice::new(pins));
             }
         }
 
@@ -1699,7 +1413,8 @@ impl<'a> Debug for RscDataDebug<'a> {
 pub struct PinDataDebug<'a>(&'a PinData);
 
 impl DebugView for PinData {
-    type Output<'a> = PinDataDebug<'a>
+    type Output<'a>
+        = PinDataDebug<'a>
     where
         Self: 'a;
 
@@ -1715,14 +1430,8 @@ impl<'a> Debug for PinDataDebug<'a> {
         let mut debug = f.debug_struct("PinData");
 
         debug
-            .field(
-                "dlc_pin_number",
-                &data.dlc_pin_number,
-            )
-            .field(
-                "dlc_pin_type_id",
-                &data.dlc_pin_type_id,
-            );
+            .field("dlc_pin_number", &data.dlc_pin_number)
+            .field("dlc_pin_type_id", &data.dlc_pin_type_id);
 
         debug.finish()
     }
@@ -1732,7 +1441,8 @@ impl<'a> Debug for PinDataDebug<'a> {
 pub struct RscConflictItemDebug<'a>(&'a RscConflictItem);
 
 impl DebugView for RscConflictItem {
-    type Output<'a> = RscConflictItemDebug<'a>
+    type Output<'a>
+        = RscConflictItemDebug<'a>
     where
         Self: 'a;
 
@@ -1753,30 +1463,19 @@ impl<'a> Debug for RscConflictItemDebug<'a> {
                 "item_type_value",
                 &format_args!("{:#010X}", data.item_type as u32),
             )
-            .field(
-                "num_entries",
-                &data.num_entries,
-            )
+            .field("num_entries", &data.num_entries)
             .field(
                 "p_rsc_conflict_data",
                 &PtrRepr::from(data.p_rsc_conflict_data),
             );
 
         unsafe {
-            if !data.p_rsc_conflict_data.is_null()
-                && data.num_entries > 0
-            {
+            if !data.p_rsc_conflict_data.is_null() && data.num_entries > 0 {
                 let total_len = data.num_entries as usize;
 
-                let conflicts = slice::from_raw_parts(
-                    data.p_rsc_conflict_data,
-                    total_len,
-                );
+                let conflicts = slice::from_raw_parts(data.p_rsc_conflict_data, total_len);
 
-                debug.field(
-                    "rsc_conflict_data",
-                    &DebugStructSlice::new(conflicts),
-                );
+                debug.field("rsc_conflict_data", &DebugStructSlice::new(conflicts));
             }
         }
 
@@ -1788,7 +1487,8 @@ impl<'a> Debug for RscConflictItemDebug<'a> {
 pub struct RscConflictDataDebug<'a>(&'a RscConflictData);
 
 impl DebugView for RscConflictData {
-    type Output<'a> = RscConflictDataDebug<'a>
+    type Output<'a>
+        = RscConflictDataDebug<'a>
     where
         Self: 'a;
 
@@ -1815,7 +1515,8 @@ impl<'a> Debug for RscConflictDataDebug<'a> {
 pub struct UniqueRespIdTableItemDebug<'a>(&'a UniqueRespIdTableItem);
 
 impl DebugView for UniqueRespIdTableItem {
-    type Output<'a> = UniqueRespIdTableItemDebug<'a>
+    type Output<'a>
+        = UniqueRespIdTableItemDebug<'a>
     where
         Self: 'a;
 
@@ -1836,30 +1537,16 @@ impl<'a> Debug for UniqueRespIdTableItemDebug<'a> {
                 "item_type_value",
                 &format_args!("{:#010X}", data.item_type as u32),
             )
-            .field(
-                "num_entries",
-                &data.num_entries,
-            )
-            .field(
-                "p_unique_data",
-                &PtrRepr::from(data.p_unique_data),
-            );
+            .field("num_entries", &data.num_entries)
+            .field("p_unique_data", &PtrRepr::from(data.p_unique_data));
 
         unsafe {
-            if !data.p_unique_data.is_null()
-                && data.num_entries > 0
-            {
+            if !data.p_unique_data.is_null() && data.num_entries > 0 {
                 let total_len = data.num_entries as usize;
 
-                let unique_data = slice::from_raw_parts(
-                    data.p_unique_data,
-                    total_len,
-                );
+                let unique_data = slice::from_raw_parts(data.p_unique_data, total_len);
 
-                debug.field(
-                    "unique_data",
-                    &DebugStructSlice::new(unique_data),
-                );
+                debug.field("unique_data", &DebugStructSlice::new(unique_data));
             }
         }
 
@@ -1871,7 +1558,8 @@ impl<'a> Debug for UniqueRespIdTableItemDebug<'a> {
 pub struct EcuUniqueRespDataDebug<'a>(&'a EcuUniqueRespData);
 
 impl DebugView for EcuUniqueRespData {
-    type Output<'a> = EcuUniqueRespDataDebug<'a>
+    type Output<'a>
+        = EcuUniqueRespDataDebug<'a>
     where
         Self: 'a;
 
@@ -1887,34 +1575,17 @@ impl<'a> Debug for EcuUniqueRespDataDebug<'a> {
         let mut debug = f.debug_struct("EcuUniqueRespData");
 
         debug
-            .field(
-                "unique_resp_identifier",
-                &data.unique_resp_identifier,
-            )
-            .field(
-                "num_param_items",
-                &data.num_param_items,
-            )
-            .field(
-                "p_params",
-                &PtrRepr::from(data.p_params),
-            );
+            .field("unique_resp_identifier", &data.unique_resp_identifier)
+            .field("num_param_items", &data.num_param_items)
+            .field("p_params", &PtrRepr::from(data.p_params));
 
         unsafe {
-            if !data.p_params.is_null()
-                && data.num_param_items > 0
-            {
+            if !data.p_params.is_null() && data.num_param_items > 0 {
                 let total_len = data.num_param_items as usize;
 
-                let params = slice::from_raw_parts(
-                    data.p_params,
-                    total_len,
-                );
+                let params = slice::from_raw_parts(data.p_params, total_len);
 
-                debug.field(
-                    "params",
-                    &DebugStructSlice::new(params),
-                );
+                debug.field("params", &DebugStructSlice::new(params));
             }
         }
 
@@ -1926,7 +1597,8 @@ impl<'a> Debug for EcuUniqueRespDataDebug<'a> {
 pub struct InfoDataDebug<'a>(&'a InfoData);
 
 impl DebugView for InfoData {
-    type Output<'a> = InfoDataDebug<'a>
+    type Output<'a>
+        = InfoDataDebug<'a>
     where
         Self: 'a;
 
@@ -1942,18 +1614,12 @@ impl<'a> Debug for InfoDataDebug<'a> {
         let mut debug = f.debug_struct("InfoData");
 
         debug
-            .field(
-                "info_code",
-                &data.info_code,
-            )
+            .field("info_code", &data.info_code)
             .field(
                 "info_code_value",
                 &format_args!("{:#010X}", data.info_code as u32),
             )
-            .field(
-                "extra_info_data",
-                &data.extra_info_data,
-            );
+            .field("extra_info_data", &data.extra_info_data);
 
         debug.finish()
     }
@@ -1963,7 +1629,8 @@ impl<'a> Debug for InfoDataDebug<'a> {
 pub struct ErrorDataDebug<'a>(&'a ErrorData);
 
 impl DebugView for ErrorData {
-    type Output<'a> = ErrorDataDebug<'a>
+    type Output<'a>
+        = ErrorDataDebug<'a>
     where
         Self: 'a;
 
@@ -1979,18 +1646,12 @@ impl<'a> Debug for ErrorDataDebug<'a> {
         let mut debug = f.debug_struct("ErrorData");
 
         debug
-            .field(
-                "error_code_id",
-                &data.error_code_id,
-            )
+            .field("error_code_id", &data.error_code_id)
             .field(
                 "error_code_value",
                 &format_args!("{:#010X}", data.error_code_id as u32),
             )
-            .field(
-                "extra_error_info_id",
-                &data.extra_error_info_id,
-            );
+            .field("extra_error_info_id", &data.extra_error_info_id);
 
         debug.finish()
     }
@@ -2000,7 +1661,8 @@ impl<'a> Debug for ErrorDataDebug<'a> {
 pub struct FlagDataDebug<'a>(&'a FlagData);
 
 impl DebugView for FlagData {
-    type Output<'a> = FlagDataDebug<'a>
+    type Output<'a>
+        = FlagDataDebug<'a>
     where
         Self: 'a;
 
@@ -2016,28 +1678,14 @@ impl<'a> Debug for FlagDataDebug<'a> {
         let mut debug = f.debug_struct("FlagData");
 
         debug
-            .field(
-                "num_flag_bytes",
-                &data.num_flag_bytes,
-            )
-            .field(
-                "p_flag_data",
-                &PtrRepr::from(data.p_flag_data),
-            );
+            .field("num_flag_bytes", &data.num_flag_bytes)
+            .field("p_flag_data", &PtrRepr::from(data.p_flag_data));
 
         unsafe {
-            if !data.p_flag_data.is_null()
-                && data.num_flag_bytes > 0
-            {
-                let bytes = slice::from_raw_parts(
-                    data.p_flag_data,
-                    data.num_flag_bytes as usize,
-                );
+            if !data.p_flag_data.is_null() && data.num_flag_bytes > 0 {
+                let bytes = slice::from_raw_parts(data.p_flag_data, data.num_flag_bytes as usize);
 
-                debug.field(
-                    "flags",
-                    &DebugByteSlice::new(bytes),
-                );
+                debug.field("flags", &DebugByteSlice::new(bytes));
             }
         }
 
@@ -2049,7 +1697,8 @@ impl<'a> Debug for FlagDataDebug<'a> {
 pub struct ExtraInfoDebug<'a>(&'a ExtraInfo);
 
 impl DebugView for ExtraInfo {
-    type Output<'a> = ExtraInfoDebug<'a>
+    type Output<'a>
+        = ExtraInfoDebug<'a>
     where
         Self: 'a;
 
@@ -2065,50 +1714,24 @@ impl<'a> Debug for ExtraInfoDebug<'a> {
         let mut debug = f.debug_struct("ExtraInfo");
 
         debug
-            .field(
-                "num_header_bytes",
-                &data.num_header_bytes,
-            )
-            .field(
-                "num_footer_bytes",
-                &data.num_footer_bytes,
-            )
-            .field(
-                "p_header_bytes",
-                &PtrRepr::from(data.p_header_bytes),
-            )
-            .field(
-                "p_footer_bytes",
-                &PtrRepr::from(data.p_footer_bytes),
-            );
+            .field("num_header_bytes", &data.num_header_bytes)
+            .field("num_footer_bytes", &data.num_footer_bytes)
+            .field("p_header_bytes", &PtrRepr::from(data.p_header_bytes))
+            .field("p_footer_bytes", &PtrRepr::from(data.p_footer_bytes));
 
         unsafe {
-            if !data.p_header_bytes.is_null()
-                && data.num_header_bytes > 0
-            {
-                let header = slice::from_raw_parts(
-                    data.p_header_bytes,
-                    data.num_header_bytes as usize,
-                );
+            if !data.p_header_bytes.is_null() && data.num_header_bytes > 0 {
+                let header =
+                    slice::from_raw_parts(data.p_header_bytes, data.num_header_bytes as usize);
 
-                debug.field(
-                    "header",
-                    &DebugByteSlice::new(header),
-                );
+                debug.field("header", &DebugByteSlice::new(header));
             }
 
-            if !data.p_footer_bytes.is_null()
-                && data.num_footer_bytes > 0
-            {
-                let footer = slice::from_raw_parts(
-                    data.p_footer_bytes,
-                    data.num_footer_bytes as usize,
-                );
+            if !data.p_footer_bytes.is_null() && data.num_footer_bytes > 0 {
+                let footer =
+                    slice::from_raw_parts(data.p_footer_bytes, data.num_footer_bytes as usize);
 
-                debug.field(
-                    "footer",
-                    &DebugByteSlice::new(footer),
-                );
+                debug.field("footer", &DebugByteSlice::new(footer));
             }
         }
 
@@ -2120,7 +1743,8 @@ impl<'a> Debug for ExtraInfoDebug<'a> {
 pub struct ResultDataDebug<'a>(&'a ResultData);
 
 impl DebugView for ResultData {
-    type Output<'a> = ResultDataDebug<'a>
+    type Output<'a>
+        = ResultDataDebug<'a>
     where
         Self: 'a;
 
@@ -2136,63 +1760,25 @@ impl<'a> Debug for ResultDataDebug<'a> {
         let mut debug = f.debug_struct("ResultData");
 
         debug
-            .field(
-                "rx_flag",
-                &data.rx_flag.debug_view(),
-            )
-            .field(
-                "unique_resp_identifier",
-                &data.unique_resp_identifier,
-            )
-            .field(
-                "acceptance_id",
-                &data.acceptance_id,
-            )
-            .field(
-                "timestamp_flags",
-                &data.timestamp_flags.debug_view(),
-            )
-            .field(
-                "tx_msg_done_timestamp",
-                &data.tx_msg_done_timestamp,
-            )
-            .field(
-                "start_msg_timestamp",
-                &data.start_msg_timestamp,
-            )
-            .field(
-                "p_extra_info",
-                &PtrRepr::from(data.p_extra_info),
-            )
-            .field(
-                "num_data_bytes",
-                &data.num_data_bytes,
-            )
-            .field(
-                "p_data_bytes",
-                &PtrRepr::from(data.p_data_bytes),
-            );
+            .field("rx_flag", &data.rx_flag.debug_view())
+            .field("unique_resp_identifier", &data.unique_resp_identifier)
+            .field("acceptance_id", &data.acceptance_id)
+            .field("timestamp_flags", &data.timestamp_flags.debug_view())
+            .field("tx_msg_done_timestamp", &data.tx_msg_done_timestamp)
+            .field("start_msg_timestamp", &data.start_msg_timestamp)
+            .field("p_extra_info", &PtrRepr::from(data.p_extra_info))
+            .field("num_data_bytes", &data.num_data_bytes)
+            .field("p_data_bytes", &PtrRepr::from(data.p_data_bytes));
 
         unsafe {
             if !data.p_extra_info.is_null() {
-                debug.field(
-                    "extra_info",
-                    &(*data.p_extra_info).debug_view(),
-                );
+                debug.field("extra_info", &(*data.p_extra_info).debug_view());
             }
 
-            if !data.p_data_bytes.is_null()
-                && data.num_data_bytes > 0
-            {
-                let bytes = slice::from_raw_parts(
-                    data.p_data_bytes,
-                    data.num_data_bytes as usize,
-                );
+            if !data.p_data_bytes.is_null() && data.num_data_bytes > 0 {
+                let bytes = slice::from_raw_parts(data.p_data_bytes, data.num_data_bytes as usize);
 
-                debug.field(
-                    "data",
-                    &DebugByteSlice::new(bytes),
-                );
+                debug.field("data", &DebugByteSlice::new(bytes));
             }
         }
 
@@ -2204,7 +1790,8 @@ impl<'a> Debug for ResultDataDebug<'a> {
 pub struct VersionDataDebug<'a>(&'a VersionData);
 
 impl DebugView for VersionData {
-    type Output<'a> = VersionDataDebug<'a>
+    type Output<'a>
+        = VersionDataDebug<'a>
     where
         Self: 'a;
 
@@ -2228,42 +1815,15 @@ impl<'a> Debug for VersionDataDebug<'a> {
                 "mvci_part2_standard_version",
                 &format_args!("{:#010X}", data.mvci_part2_standard_version),
             )
-            .field(
-                "hw_serial_number",
-                &data.hw_serial_number,
-            )
-            .field(
-                "hw_name",
-                &CStrDebug::new(data.hw_name.as_ptr()),
-            )
-            .field(
-                "hw_version",
-                &format_args!("{:#010X}", data.hw_version),
-            )
-            .field(
-                "hw_date",
-                &format_args!("{:#010X}", data.hw_date),
-            )
-            .field(
-                "hw_interface",
-                &data.hw_interface,
-            )
-            .field(
-                "fw_name",
-                &CStrDebug::new(data.fw_name.as_ptr()),
-            )
-            .field(
-                "fw_version",
-                &format_args!("{:#010X}", data.fw_version),
-            )
-            .field(
-                "fw_date",
-                &format_args!("{:#010X}", data.fw_date),
-            )
-            .field(
-                "vendor_name",
-                &CStrDebug::new(data.vendor_name.as_ptr()),
-            )
+            .field("hw_serial_number", &data.hw_serial_number)
+            .field("hw_name", &CStrDebug::new(data.hw_name.as_ptr()))
+            .field("hw_version", &format_args!("{:#010X}", data.hw_version))
+            .field("hw_date", &format_args!("{:#010X}", data.hw_date))
+            .field("hw_interface", &data.hw_interface)
+            .field("fw_name", &CStrDebug::new(data.fw_name.as_ptr()))
+            .field("fw_version", &format_args!("{:#010X}", data.fw_version))
+            .field("fw_date", &format_args!("{:#010X}", data.fw_date))
+            .field("vendor_name", &CStrDebug::new(data.vendor_name.as_ptr()))
             .field(
                 "pdu_api_sw_name",
                 &CStrDebug::new(data.pdu_api_sw_name.as_ptr()),
@@ -2285,7 +1845,8 @@ impl<'a> Debug for VersionDataDebug<'a> {
 pub struct CopCtrlDataDebug<'a>(&'a CopCtrlData);
 
 impl DebugView for CopCtrlData {
-    type Output<'a> = CopCtrlDataDebug<'a>
+    type Output<'a>
+        = CopCtrlDataDebug<'a>
     where
         Self: 'a;
 
@@ -2316,20 +1877,12 @@ impl<'a> Debug for CopCtrlDataDebug<'a> {
             );
 
         unsafe {
-            if !data.expected_response_array.is_null()
-                && data.num_possible_expected_responses > 0
-            {
+            if !data.expected_response_array.is_null() && data.num_possible_expected_responses > 0 {
                 let total_count = data.num_possible_expected_responses as usize;
 
-                let responses = slice::from_raw_parts(
-                    data.expected_response_array,
-                    total_count,
-                );
+                let responses = slice::from_raw_parts(data.expected_response_array, total_count);
 
-                debug.field(
-                    "expected_responses",
-                    &DebugStructSlice::new(responses),
-                );
+                debug.field("expected_responses", &DebugStructSlice::new(responses));
             }
         }
 
@@ -2341,7 +1894,8 @@ impl<'a> Debug for CopCtrlDataDebug<'a> {
 pub struct IoEntityAddressDataDebug<'a>(&'a IoEntityAddressData);
 
 impl DebugView for IoEntityAddressData {
-    type Output<'a> = IoEntityAddressDataDebug<'a>
+    type Output<'a>
+        = IoEntityAddressDataDebug<'a>
     where
         Self: 'a;
 
@@ -2357,14 +1911,8 @@ impl<'a> Debug for IoEntityAddressDataDebug<'a> {
         let mut debug = f.debug_struct("IoEntityAddressData");
 
         debug
-            .field(
-                "logical_address",
-                &data.logical_address,
-            )
-            .field(
-                "doip_ctrl_timeout",
-                &data.doip_ctrl_timeout,
-            );
+            .field("logical_address", &data.logical_address)
+            .field("doip_ctrl_timeout", &data.doip_ctrl_timeout);
 
         debug.finish()
     }
@@ -2374,7 +1922,8 @@ impl<'a> Debug for IoEntityAddressDataDebug<'a> {
 pub struct IoEntityStatusDataDebug<'a>(&'a IoEntityStatusData);
 
 impl DebugView for IoEntityStatusData {
-    type Output<'a> = IoEntityStatusDataDebug<'a>
+    type Output<'a>
+        = IoEntityStatusDataDebug<'a>
     where
         Self: 'a;
 
@@ -2390,22 +1939,10 @@ impl<'a> Debug for IoEntityStatusDataDebug<'a> {
         let mut debug = f.debug_struct("IoEntityStatusData");
 
         debug
-            .field(
-                "entity_type",
-                &data.entity_type,
-            )
-            .field(
-                "tcp_clients_max",
-                &data.tcp_clients_max,
-            )
-            .field(
-                "tcp_clients",
-                &data.tcp_clients,
-            )
-            .field(
-                "max_data_size",
-                &data.max_data_size,
-            );
+            .field("entity_type", &data.entity_type)
+            .field("tcp_clients_max", &data.tcp_clients_max)
+            .field("tcp_clients", &data.tcp_clients)
+            .field("max_data_size", &data.max_data_size);
 
         debug.finish()
     }
@@ -2415,7 +1952,8 @@ impl<'a> Debug for IoEntityStatusDataDebug<'a> {
 pub struct ExpRespDataDebug<'a>(&'a ExpRespData);
 
 impl DebugView for ExpRespData {
-    type Output<'a> = ExpRespDataDebug<'a>
+    type Output<'a>
+        = ExpRespDataDebug<'a>
     where
         Self: 'a;
 
@@ -2431,82 +1969,40 @@ impl<'a> Debug for ExpRespDataDebug<'a> {
         let mut debug = f.debug_struct("ExpRespData");
 
         debug
-            .field(
-                "response_type",
-                &data.response_type,
-            )
-            .field(
-                "acceptance_id",
-                &data.acceptance_id,
-            )
-            .field(
-                "num_mask_pattern_bytes",
-                &data.num_mask_pattern_bytes,
-            )
-            .field(
-                "p_mask_data",
-                &PtrRepr::from(data.p_mask_data),
-            )
-            .field(
-                "p_pattern_data",
-                &PtrRepr::from(data.p_pattern_data),
-            )
-            .field(
-                "num_unique_resp_ids",
-                &data.num_unique_resp_ids,
-            )
-            .field(
-                "p_unique_resp_ids",
-                &PtrRepr::from(data.p_unique_resp_ids),
-            );
+            .field("response_type", &data.response_type)
+            .field("acceptance_id", &data.acceptance_id)
+            .field("num_mask_pattern_bytes", &data.num_mask_pattern_bytes)
+            .field("p_mask_data", &PtrRepr::from(data.p_mask_data))
+            .field("p_pattern_data", &PtrRepr::from(data.p_pattern_data))
+            .field("num_unique_resp_ids", &data.num_unique_resp_ids)
+            .field("p_unique_resp_ids", &PtrRepr::from(data.p_unique_resp_ids));
 
         unsafe {
-            if !data.p_mask_data.is_null()
-                && data.num_mask_pattern_bytes > 0
-            {
-                let bytes = slice::from_raw_parts(
-                    data.p_mask_data,
-                    data.num_mask_pattern_bytes as usize,
-                );
+            if !data.p_mask_data.is_null() && data.num_mask_pattern_bytes > 0 {
+                let bytes =
+                    slice::from_raw_parts(data.p_mask_data, data.num_mask_pattern_bytes as usize);
 
-                debug.field(
-                    "mask_data",
-                    &DebugByteSlice::new(bytes),
-                );
+                debug.field("mask_data", &DebugByteSlice::new(bytes));
             }
 
-            if !data.p_pattern_data.is_null()
-                && data.num_mask_pattern_bytes > 0
-            {
+            if !data.p_pattern_data.is_null() && data.num_mask_pattern_bytes > 0 {
                 let bytes = slice::from_raw_parts(
                     data.p_pattern_data,
                     data.num_mask_pattern_bytes as usize,
                 );
 
-                debug.field(
-                    "pattern_data",
-                    &DebugByteSlice::new(bytes),
-                );
+                debug.field("pattern_data", &DebugByteSlice::new(bytes));
             }
 
-            if !data.p_unique_resp_ids.is_null()
-                && data.num_unique_resp_ids > 0
-            {
+            if !data.p_unique_resp_ids.is_null() && data.num_unique_resp_ids > 0 {
                 let total_len = data.num_unique_resp_ids as usize;
 
-                let ids = slice::from_raw_parts(
-                    data.p_unique_resp_ids,
-                    total_len,
-                );
+                let ids = slice::from_raw_parts(data.p_unique_resp_ids, total_len);
 
-                debug.field(
-                    "unique_resp_ids",
-                    &DebugDwordSlice::new(ids),
-                );
+                debug.field("unique_resp_ids", &DebugDwordSlice::new(ids));
             }
         }
 
         debug.finish()
     }
 }
-

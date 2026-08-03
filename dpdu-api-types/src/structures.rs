@@ -1,9 +1,9 @@
-use std::ffi::c_void;
-use std::fmt::Debug;
 use crate::{
     CombinationMode, PduCpst, PduErrorEvt, PduFilter, PduInfo, PduIt, PduPc, PduPt, PduQueueMode,
     PduStatus, TimingSet, VidPreselectMode,
 };
+use std::ffi::c_void;
+use std::fmt::Debug;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

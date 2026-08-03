@@ -33,9 +33,9 @@ pub mod bitflags;
 #[cfg(feature = "debug")]
 pub mod debug;
 
-use std::ffi::c_void;
 pub use enums::*;
 pub use functions::*;
+use std::ffi::c_void;
 pub use structures::*;
 
 /// Undefined ID value
