@@ -1,5 +1,5 @@
 use std::ffi::c_void;
-
+use std::fmt::Debug;
 use crate::{
     CombinationMode, PduCpst, PduErrorEvt, PduFilter, PduInfo, PduIt, PduPc, PduPt, PduQueueMode,
     PduStatus, TimingSet, VidPreselectMode,

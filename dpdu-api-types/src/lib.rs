@@ -25,8 +25,15 @@ mod structures;
 #[cfg(feature = "bitflags")]
 pub mod bitflags;
 
-use std::ffi::c_void;
+/// Utilities for debugging and inspecting FFI data structures.
+///
+/// This module provides helper types and implementations for safely
+/// formatting raw pointers, C-compatible structures, and other data
+/// used during FFI interactions.
+#[cfg(feature = "debug")]
+pub mod debug;
 
+use std::ffi::c_void;
 pub use enums::*;
 pub use functions::*;
 pub use structures::*;

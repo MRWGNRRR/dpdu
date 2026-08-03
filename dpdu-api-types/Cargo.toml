@@ -19,7 +19,8 @@ bitflags = ["dep:bitflags"]
 num_enum = ["dep:num_enum"]
 thiserror = ["dep:thiserror"]
 strum = ["dep:strum"]
-full = ["serde", "bitflags", "num_enum", "thiserror", "strum"]
+debug = ["dep:parking_lot"]
+full = ["serde", "bitflags", "num_enum", "thiserror", "strum", "debug"]
 
 [dependencies]
 strum = { version = "0.28.0", features = ["strum_macros", "derive"], optional = true }
@@ -27,3 +28,4 @@ thiserror = { version = "2.0.18", optional = true }
 num_enum = { version = "0.7.6", optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 bitflags = { version = "2.13.1", optional = true }
+parking_lot = { version = "0.12.5", optional = true }
