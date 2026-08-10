@@ -577,7 +577,12 @@ impl PduPrimitive {
         &self,
     ) -> PrimitiveResult<broadcast::Receiver<PrimitiveEvent>> {
         self.assert_error()?;
-        self.assert_dead()?;
+
+        // If the event receiver has not been taken away, then we will not check whether
+        // the primitive is alive, otherwise condition races are possible.
+        if !self.primitive_event_rx.lock().is_some() {
+            self.assert_dead()?;
+        }
 
         let receiver = self
             .primitive_event_rx
