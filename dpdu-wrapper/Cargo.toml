@@ -11,7 +11,7 @@ documentation = "https://docs.rs/dpdu-wrapper"
 [dependencies]
 dpdu-wrapper-support = { version = "0.1.1", path = "../dpdu-wrapper-support" }
 thiserror = { version = "2.0.18" }
-quick-xml = { version = "0.41.0", features = ["serialize"] }
+quick-xml = { version = "0.42.0", features = ["serialize"] }
 serde = { version = "1.0.228", features = ["default", "derive"] }
 winreg = { version = "0.56.0" }
 cfg-if = { version = "1.0.4" }
