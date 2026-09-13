@@ -814,7 +814,7 @@ trait CopParamsBuilder: sealed::Sealed {
     fn build(&self) -> PrimitiveParams;
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct StartComm {
     pub data: Vec<u8>,
 
@@ -883,7 +883,7 @@ impl CopParamsBuilder for StartComm {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct StopComm {
     pub data: Vec<u8>,
 
@@ -955,7 +955,7 @@ impl CopParamsBuilder for StopComm {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SendRecv {
     pub data: Vec<u8>,
 
@@ -979,7 +979,7 @@ impl SendRecv {
         SendRecv {
             data: data.map(|v| v.to_vec()).unwrap_or_default(),
             tx_flags: TransmitFlags::default(),
-            send_cycles: SendCycles::Normal(1),
+            send_cycles: SendCycles::Normal(if data.is_some() { 1 } else { 0 }),
             receive_cycles: ReceiveCycles::Normal(1),
             param_buffer: ComParamBuffer::default(),
             filters: vec![ExpectedResponse {
