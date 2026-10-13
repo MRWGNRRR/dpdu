@@ -11,10 +11,10 @@ use crate::types::pdu_com_param::table::{
     ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable,
 };
 use crate::utils::ecu_name_to_unique_resp_id;
-use map_macro::{hash_map_e, hash_set};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::{com_param_definition_set, com_param_set, com_param_table};
 
 /// Raw CAN transport stack (ISO 11898-2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,15 +162,15 @@ impl ComParamDefinitionStack for RawCanTransportStack {
     }
 
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
-        ComParamDefinitionSet(hash_set! {
+        com_param_definition_set! {
             // Com.
-            self.can_filler_byte.into(),
-            self.can_filler_byte_handling.into(),
-            self.send_remote_frame.into(),
+            self.can_filler_byte,
+            self.can_filler_byte_handling,
+            self.send_remote_frame,
 
             // Error handling.
-            self.repeat_req_count_trans.into()
-        })
+            self.repeat_req_count_trans
+        }
     }
 
     fn build_table(&self) -> ComParamDefinitionTable<ComParamDefinition> {
@@ -180,15 +180,15 @@ impl ComParamDefinitionStack for RawCanTransportStack {
             ecu_name_to_unique_resp_id(&self.ecu_layer_short_name.0)
         };
 
-        ComParamDefinitionTable(hash_map_e! {
-            id => hash_set! {
-                self.can_phys_req_ext_addr.into(),
-                self.can_phys_req_format.into(),
-                self.can_phys_req_id.into(),
-                self.can_resp_uudt_ext_addr.into(),
-                self.can_resp_uudt_format.into(),
-                self.can_resp_uudt_id.into(),
+        com_param_table! {
+            id => com_param_definition_set! {
+                self.can_phys_req_ext_addr,
+                self.can_phys_req_format,
+                self.can_phys_req_id,
+                self.can_resp_uudt_ext_addr,
+                self.can_resp_uudt_format,
+                self.can_resp_uudt_id,
             }
-        })
+        }
     }
 }

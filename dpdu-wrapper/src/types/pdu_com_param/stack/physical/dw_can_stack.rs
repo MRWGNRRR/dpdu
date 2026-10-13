@@ -6,10 +6,10 @@ use crate::types::pdu_com_param::stack::ComParamDefinitionStack;
 use crate::types::pdu_com_param::table::{
     ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable,
 };
-use map_macro::hash_set;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::{com_param_definition_set, com_param_set};
 
 /// DW can stack (ISO 11898-2).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,19 +126,19 @@ impl ComParamDefinitionStack for DwCanStack {
     }
 
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
-        ComParamDefinitionSet(hash_set! {
+        com_param_definition_set! {
             // Bus type.
-            self.baudrate.into(),
-            self.bit_sample_point.into(),
-            self.canfd_baudrate.into(),
-            self.canfd_bit_sample_point.into(),
-            self.canfd_sync_jump_width.into(),
-            self.can_baudrate_record.clone().into(),
-            self.listen_only.into(),
-            self.samples_per_bit.into(),
-            self.sync_jump_width.into(),
-            self.termination_type.into()
-        })
+            self.baudrate,
+            self.bit_sample_point,
+            self.canfd_baudrate,
+            self.canfd_bit_sample_point,
+            self.canfd_sync_jump_width,
+            self.can_baudrate_record.clone(),
+            self.listen_only,
+            self.samples_per_bit,
+            self.sync_jump_width,
+            self.termination_type
+        }
     }
 
     fn build_table(&self) -> ComParamDefinitionTable<ComParamDefinition> {

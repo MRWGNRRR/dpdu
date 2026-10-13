@@ -13,6 +13,10 @@ use crate::worker::PduAsyncWorker;
 pub use bytes;
 pub use libloading;
 
+/// For macro.
+#[doc(hidden)]
+pub use dashmap;
+
 #[derive(Debug)]
 pub enum AsyncRuntimeTarget<'a> {
     Api(&'a PduApi),

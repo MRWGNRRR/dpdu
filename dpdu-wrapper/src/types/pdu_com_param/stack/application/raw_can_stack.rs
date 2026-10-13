@@ -10,10 +10,10 @@ use crate::types::pdu_com_param::stack::ComParamDefinitionStack;
 use crate::types::pdu_com_param::table::{
     ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable,
 };
-use map_macro::hash_set;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::{com_param_definition_set, com_param_set};
 
 /// Raw CAN application stack (ISO 11898-3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,28 +171,28 @@ impl ComParamDefinitionStack for RawCanApplicationStack {
     }
 
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
-        ComParamDefinitionSet(hash_set! {
+        com_param_definition_set! {
             // Timings.
-            self.change_speed_tx_delay.into(),
-            self.cyclic_resp_timeout.into(),
-            self.p2_max.into(),
-            self.p2_min.into(),
-            self.p3_func.into(),
-            self.p3_phys.into(),
+            self.change_speed_tx_delay,
+            self.cyclic_resp_timeout,
+            self.p2_max,
+            self.p2_min,
+            self.p3_func,
+            self.p3_phys,
 
             // Error handling.
-            self.repeat_req_count_app.into(),
+            self.repeat_req_count_app,
 
             // Com.
-            self.change_speed_ctrl.into(),
-            self.change_speed_message.clone().into(),
-            self.change_speed_rate.into(),
-            self.change_speed_res_ctrl.into(),
-            self.enable_performance_test.into(),
-            self.loopback.into(),
-            self.sw_can_high_voltage.into(),
-            self.transmit_ind_enable.into(),
-        })
+            self.change_speed_ctrl,
+            self.change_speed_message.clone(),
+            self.change_speed_rate,
+            self.change_speed_res_ctrl,
+            self.enable_performance_test,
+            self.loopback,
+            self.sw_can_high_voltage,
+            self.transmit_ind_enable,
+        }
     }
 
     fn build_table(&self) -> ComParamDefinitionTable<ComParamDefinition> {

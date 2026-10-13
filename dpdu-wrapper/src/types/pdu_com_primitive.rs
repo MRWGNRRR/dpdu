@@ -14,7 +14,8 @@ use std::sync::{Arc, Once, OnceLock, Weak};
 use std::thread::spawn;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
+use crate::types::pdu_com_logical_link::PduLogicalLink;
 
 pub type PrimitiveResult<T> = std::result::Result<T, PrimitiveError>;
 
@@ -76,6 +77,9 @@ pub struct PduPrimitive {
 
     /// A way to create communication primitives.
     pub(crate) primitive_type: PrimitiveType,
+
+    /// Weak reference to [`PduLogicalLink`] to update com param buffers.
+    pub(crate) logical_link: Weak<PduLogicalLink>,
 
     /// Event channel sender owned by [`PduPrimitive`].
     ///
@@ -273,6 +277,8 @@ impl PduPrimitive {
             .set(h_cop)
             .expect("internal error: primitive was reported as not started but already has primitive handle");
 
+        self.on_start_primitive(h_cop);
+
         Ok(())
     }
 
@@ -316,6 +322,8 @@ impl PduPrimitive {
                     .set(h_cop)
                     .expect("internal error: primitive was reported as not started but already has primitive handle");
 
+                self.on_start_primitive(h_cop);
+
                 Ok(())
             }
             None => {
@@ -327,6 +335,27 @@ impl PduPrimitive {
 
                 Ok(())
             }
+        }
+    }
+
+    /// The function copies buffers with PduCopt = UPDATE_PARAM or RESTORE_PARAM.
+    fn on_start_primitive(&self, h_cop: PduCopHandle) {
+        if let Some(loli) = self.logical_link.upgrade() {
+            match self.primitive_type {
+                PrimitiveType::UpdateParam => {
+                    *loli.active_buffer.lock() = loli.working_buffer.lock().clone();
+                }
+                PrimitiveType::RestoreParam => {
+                    *loli.working_buffer.lock() = loli.active_buffer.lock().clone();
+                }
+                _ => {}
+            }
+        } else {
+            warn!(
+                h_cll = self.h_cll,
+                h_cop,
+                "The logical link is abnormally destroyed at the start of the primitive."
+            );
         }
     }
 

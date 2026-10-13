@@ -18,10 +18,20 @@ use std::sync::OnceLock;
 use tokio::task::spawn_blocking;
 use tracing::warn;
 
-/// With the current design, this structure cannot be created directly. It can only be constructed
-/// via the [`from_*`] methods. This is done to prevent panics when calling [PduApi::set_com_param()].
+/// A communication parameter definition associated with a specific D-PDU API driver.
 ///
-/// Thus, a [ComParam] is always identified either by an ID or a short name.
+/// It cannot be instantiated directly and must be created using the [`from_*`] methods.
+///
+/// The parameter name is optional, but implementations should strive to provide it
+/// to facilitate more productive development.
+///
+/// ## WARNING
+///
+/// The [`PartialEq`] and [`Hash`] implementations for this structure must consider only the
+/// `id` field.
+///
+/// The [`Eq`] trait is implemented for compatibility with collections that require it.
+/// Therefore, a positive equality comparison does not guarantee bit-by-bit equality.
 #[derive(Clone)]
 pub struct PduComParam {
     pub(crate) short_name: OnceLock<String>,

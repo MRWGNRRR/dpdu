@@ -4,14 +4,14 @@ use crate::constants::{CLL_EVENTS_QUEUE_SIZE, MODULE_EVENTS_QUEUE_SIZE};
 use crate::error::GeneralResult;
 use crate::event_callback::event_callback;
 use crate::handle_manager::PduHandleManager;
-use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, PduLogicalLink};
+use crate::types::pdu_com_logical_link::{CllCreateFlags, CllCreateType, ParamsBuffer, PduLogicalLink};
 use crate::types::pdu_event::{PduEvent, PduEventTarget, StopReceive};
 use crate::types::pdu_module::PduModuleData;
 use crate::types::pdu_status::{PduStatusData, PduStatusTarget};
-use crate::types::{PduModuleHandle, PduUniqueCllTag};
+use crate::types::{PduModuleHandle, PduObjectId, PduUniqueCllTag};
 use crate::utils::{NonClonable, random_non_zero_usize};
 use crate::worker::{PduAsyncWorker, Query};
-use dpdu_api_types::PduStatus;
+use dpdu_api_types::{ParamStructAccessTiming, ParamStructSessionTiming, PduCpst, PduPc, PduStatus, TimingSet};
 use parking_lot::Mutex;
 use regex::Regex;
 use std::ops::Deref;
@@ -19,7 +19,11 @@ use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::thread::spawn;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
+use crate::types::pdu_com_param::{ByteFieldComParam, CpVariant, LongFieldComParam, StructComParam, StructFieldComParam};
+use crate::types::pdu_com_param::table::ComParamDefinition;
+use crate::types::pdu_resource::{BusSource, PinSource, ProtocolSource};
+use crate::utils::module_description::{MdfComParam, MdfComParamClass, MdfComParamDataType, MdfComParamStructFieldData, MdfComParamValue, MdfComParamWrapper};
 
 pub type VciList = Vec<Arc<PduVci>>;
 
@@ -400,6 +404,8 @@ impl PduVci {
             return Err(err)?;
         }
 
+        let params_buffer = capture_initial_cll_comm_params_from_mdf(&self.api, create_type);
+
         let cll = Arc::new_cyclic(|weak| PduLogicalLink {
             me: weak.clone(),
             api: self.api.clone(),
@@ -409,6 +415,8 @@ impl PduVci {
             pdu_event_tx: NonClonable(pdu_event_tx),
             logical_link_event_tx,
             logical_link_event_rx: Mutex::new(Some(logical_link_event_rx)),
+            working_buffer: Mutex::new(params_buffer.clone()),
+            active_buffer: Mutex::new(params_buffer),
             sync: Mutex::default(),
         });
 
@@ -476,6 +484,8 @@ impl PduVci {
                     return Err(err)?;
                 }
 
+                let params_buffer = capture_initial_cll_comm_params_from_mdf(&self.api, create_type);
+
                 let cll = Arc::new_cyclic(|weak| PduLogicalLink {
                     me: weak.clone(),
                     api: self.api.clone(),
@@ -485,6 +495,8 @@ impl PduVci {
                     pdu_event_tx: NonClonable(pdu_event_tx),
                     logical_link_event_tx,
                     logical_link_event_rx: Mutex::new(Some(logical_link_event_rx)),
+                    working_buffer: Mutex::new(params_buffer.clone()),
+                    active_buffer: Mutex::new(params_buffer),
                     sync: Mutex::default(),
                 });
 
@@ -677,4 +689,190 @@ impl VciStatus {
     pub fn is_status_not_ready(&self) -> bool {
         matches!(self.status_code, PduStatus::ModstNotReady)
     }
+}
+
+fn capture_initial_cll_comm_params_from_mdf(
+    api: &PduApi,
+    create_type: &CllCreateType,
+) -> ParamsBuffer {
+    let mut buffer = ParamsBuffer::default();
+
+    let (protocol, bus) = api
+        .module_description
+        .as_ref()
+        .map(|mdf| {
+            let proto = match create_type {
+                CllCreateType::ResourceId(v) => {
+                    mdf.resources.get_by_id(*v).map(|v| {
+                        &v.protocol
+                    })
+                }
+                CllCreateType::ResourceData { protocol, .. } => {
+                    match protocol {
+                        ProtocolSource::Id(v) => mdf.protocols.get_by_id(*v),
+                        ProtocolSource::Name(v) => mdf.protocols.get_by_short_name(v)
+                    }
+                }
+            };
+
+            let bus = match create_type {
+                CllCreateType::ResourceId(v) => {
+                    mdf.resources.get_by_id(*v).map(|v| {
+                        &v.bus_type
+                    })
+                }
+                CllCreateType::ResourceData { bus, .. } => {
+                    match bus {
+                        BusSource::Id(v) => mdf.bus_types.get_by_id(*v),
+                        BusSource::Name(v) => mdf.bus_types.get_by_short_name(v)
+                    }
+                }
+            };
+
+            (proto, bus)
+        })
+        .unwrap_or((None, None));
+
+    let mut fill = |cp_list: &MdfComParamWrapper| {
+        for (_, cp) in cp_list.inner.iter() {
+            let Some(name) = &cp.short_name else {
+                warn!("MDF does not contain the name of the comm. parameter #{}", cp.id);
+                continue;
+            };
+
+            match &cp.class {
+                MdfComParamClass::UniqueId => {
+                    buffer.table.entry(0).or_default().add(ComParamDefinition {
+                        class: PduPc::UniqueId,
+                        short_name: name.clone(),
+                        variant: match parse_comm_param_value_from_mdf(cp.deref()) {
+                            Some(v) => v,
+                            None => continue
+                        }
+                    });
+                }
+                v => {
+                    buffer.set.add(ComParamDefinition {
+                        class: match v {
+                            MdfComParamClass::Timing => PduPc::Timing,
+                            MdfComParamClass::Init => PduPc::Init,
+                            MdfComParamClass::Com => PduPc::Com,
+                            MdfComParamClass::ErrHdl => PduPc::ErrHdl,
+                            MdfComParamClass::BusType => PduPc::BusType,
+                            MdfComParamClass::UniqueId => {
+                                unreachable!(
+                                    "internal error: comm. param class UniqueId must be \
+                                    handled at the top level"
+                                );
+                            },
+                            MdfComParamClass::TesterPresent => PduPc::TesterPresent
+                        },
+                        short_name: name.clone(),
+                        variant: match parse_comm_param_value_from_mdf(cp.deref()) {
+                            Some(v) => v,
+                            None => continue
+                        }
+                    });
+                }
+            }
+        }
+    };
+
+    if let Some(bus) = bus {
+        fill(&bus.com_params);
+    }
+
+    if let Some(proto) = protocol {
+        fill(&proto.com_params);
+    } else {
+        warn!(
+            "Unable to retrieve the communication parameters from the MDF file because \
+            the API is not constructed with the MDF file, or the MDF file does not \
+            support that protocol"
+        );
+    }
+
+    buffer
+}
+
+fn parse_comm_param_value_from_mdf(cp: &MdfComParam) -> Option<CpVariant> {
+    Some(match &cp.default_value {
+        MdfComParamValue::UnsignedNum8(v) => CpVariant::Unum8(*v),
+        MdfComParamValue::SignedNum8(v) => CpVariant::Snum8(*v),
+        MdfComParamValue::UnsignedNum16(v) => CpVariant::Unum16(*v),
+        MdfComParamValue::SignedNum16(v) => CpVariant::Snum16(*v),
+        MdfComParamValue::UnsignedNum32(v) => CpVariant::Unum32(*v),
+        MdfComParamValue::SignedNum32(v) => CpVariant::Snum32(*v),
+        MdfComParamValue::ByteField { max_values, data, .. } => {
+            CpVariant::ByteField(ByteFieldComParam::new(
+                data.clone(),
+                Some(*max_values as _)
+            ))
+        }
+        MdfComParamValue::LongField { max_values, data, .. } => {
+            CpVariant::LongField(LongFieldComParam::new(
+                data.clone(),
+                Some(*max_values as _)
+            ))
+        }
+        MdfComParamValue::StructField { max_values, data, .. } => {
+            let mut struct_fields = vec![];
+
+            let cpst = match data {
+                MdfComParamStructFieldData::AccessTiming(v) => {
+                    for sf in v {
+                        struct_fields.push(StructComParam {
+                            access_timing: ParamStructAccessTiming {
+                                p2_min: sf.p2_min,
+                                p2_max: sf.p2_max,
+                                p3_min: sf.p3_min,
+                                p3_max: sf.p3_max,
+                                p4_min: sf.p4_min,
+                                timing_set: match sf.timing_set {
+                                    1 => TimingSet::Default,
+                                    2 => TimingSet::OverrideReceived,
+                                    3 => TimingSet::OverrideTester,
+                                    4 => TimingSet::Normal,
+                                    0xFF => TimingSet::Extended,
+                                    _ => {
+                                        warn!(
+                                            "MDF contains invalid timing \
+                                            set in the AccessTiming struct \
+                                            of comm. parameter #{}",
+                                            cp.id
+                                        );
+                                        return None;
+                                    }
+                                }
+                            }
+                        })
+                    }
+                    PduCpst::AccessTiming
+                }
+                MdfComParamStructFieldData::SessionTiming(v) => {
+                    for sf in v {
+                        struct_fields.push(StructComParam {
+                            session_timing: ParamStructSessionTiming {
+                                session: sf.session,
+                                p2_max_high: sf.p2_max_high,
+                                p2_max_low: sf.p2_max_low,
+                                p2_star_high: sf.p2_star_high,
+                                p2_star_low: sf.p2_star_low,
+                            }
+                        });
+                    }
+                    PduCpst::SessionTiming
+                }
+            };
+
+            CpVariant::StructField(StructFieldComParam::new(
+                cpst,
+                struct_fields,
+                Some(*max_values as _)
+            ))
+        }
+        MdfComParamValue::Uncategorized(_) => {
+            return None;
+        }
+    })
 }

@@ -286,16 +286,22 @@ impl ComParamDefinitionStack for KwpOnIsoTpOnDwCanStack {
     }
 
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
-        self.app_stack
-            .build_set()
+        let set = self.app_stack.build_set();
+
+        set
             .merge(self.transport_stack.build_set())
-            .merge(self.physical_stack.build_set())
+            .merge(self.physical_stack.build_set());
+
+        set
     }
 
     fn build_table(&self) -> ComParamDefinitionTable<ComParamDefinition> {
-        self.app_stack
-            .build_table()
+        let table = self.app_stack.build_table();
+
+        table
             .merge(self.transport_stack.build_table())
-            .merge(self.physical_stack.build_table())
+            .merge(self.physical_stack.build_table());
+
+        table
     }
 }

@@ -1,8 +1,9 @@
+use std::any::type_name;
 use crate::api::{ApiError, ApiResult, PduApi};
 use crate::constants::COP_EVENTS_QUEUE_SIZE;
 use crate::error::{GeneralError, GeneralResult};
 use crate::handle_manager::PduHandleManager;
-use crate::types::pdu_com_param::table::{IntoPduComParam, MapTarget, PduComParamTable, SetTarget};
+use crate::types::pdu_com_param::table::{ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable, IntoPduComParam, MapTarget, PduComParamDefinitionSet, PduComParamDefinitionTable, PduComParamTable, SetTarget};
 use crate::types::pdu_com_primitive::{
     ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PrimitiveParams,
     PrimitiveStatusStore, PrimitiveType, ReceiveCycles, ResponseType, SendCycles, TransmitFlags,
@@ -17,14 +18,16 @@ use crate::worker::{PduAsyncWorker, Query};
 use bytes::Bytes;
 use dpdu_api_types::{PduError, PduStatus};
 use parking_lot::Mutex;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, Once, OnceLock, Weak};
+use std::sync::atomic::AtomicBool;
 use std::thread::spawn;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
+use crate::types::pdu_com_param::PduComParam;
 
 #[derive(Debug)]
 pub struct PduLogicalLink {
@@ -66,6 +69,10 @@ pub struct PduLogicalLink {
     /// After the receiver is taken, subsequent calls create new receivers from
     /// [`logical_link_event_tx`].
     pub(crate) logical_link_event_rx: Mutex<Option<broadcast::Receiver<()>>>,
+
+    pub(crate) working_buffer: Mutex<ParamsBuffer>,
+
+    pub(crate) active_buffer: Mutex<ParamsBuffer>,
 
     pub(crate) sync: Mutex<()>,
 }
@@ -140,6 +147,9 @@ impl PduLogicalLink {
         let _sync_guard = self.sync.lock();
         self.api
             .pdu_connect(self.get_module_handle(), self.get_cll_handle())?;
+
+        *self.active_buffer.lock() = self.working_buffer.lock().clone();
+
         Ok(true)
     }
 
@@ -153,6 +163,7 @@ impl PduLogicalLink {
                 worker
                     .pdu_connect(self.get_module_handle(), self.get_cll_handle())
                     .await?;
+                *self.active_buffer.lock() = self.working_buffer.lock().clone();
                 Ok(true)
             }
             None => {
@@ -283,6 +294,7 @@ impl PduLogicalLink {
             h_cll,
             h_cop: OnceLock::new(),
             primitive_type,
+            logical_link: self.me.clone(),
             pdu_event_tx: NonClonable(pdu_event_tx),
             error_store: primitive_error_store,
             primitive_event_tx,
@@ -360,7 +372,12 @@ impl PduLogicalLink {
                         }
                     };
                     match self.api.pdu_set_com_param(h_mod, h_cll, &cp) {
-                        Ok(()) => {}
+                        Ok(()) => {
+                            self.working_buffer
+                                .lock()
+                                .set
+                                .update(def.clone());
+                        }
                         Err(ApiError::PduError(PduError::ComParamNotSupported)) => {
                             continue;
                         }
@@ -370,8 +387,26 @@ impl PduLogicalLink {
             }
             SetTarget::ComParams(v) => {
                 for cp in v.iter() {
-                    match self.api.pdu_set_com_param(h_mod, h_cll, cp) {
-                        Ok(()) => {}
+                    match self.api.pdu_set_com_param(h_mod, h_cll, &*cp) {
+                        Ok(()) => {
+                            match cp.to_definition() {
+                                Ok(v) => {
+                                    self.working_buffer
+                                        .lock()
+                                        .set
+                                        .update(v);
+                                }
+                                Err(crate::types::pdu_com_param::table::MissingCommunicationParameterName) => {
+                                    warn!(
+                                        "The communication parameter #{} could not be updated in \
+                                        the working buffer because its name has been anonymised. \
+                                        Use ComParamDefinition when setting communication \
+                                        parameters",
+                                        cp.id
+                                    );
+                                }
+                            }
+                        }
                         Err(ApiError::PduError(PduError::ComParamNotSupported)) => {}
                         Err(err) => Err(err)?,
                     }
@@ -400,8 +435,8 @@ impl PduLogicalLink {
                             Err(err) => Err(err)?,
                         };
 
-                        match worker.pdu_set_com_param(h_mod, h_cll, cp).await {
-                            Ok(()) => {}
+                        match worker.pdu_set_com_param(h_mod, h_cll, cp.clone()).await {
+                            Ok(()) => self.update_buffer_param(cp.id, &cp),
                             Err(GeneralError::ApiError(ApiError::PduError(
                                 PduError::ComParamNotSupported,
                             ))) => {
@@ -414,7 +449,7 @@ impl PduLogicalLink {
                 SetTarget::ComParams(v) => {
                     for cp in v.iter() {
                         match worker.pdu_set_com_param(h_mod, h_cll, cp.clone()).await {
-                            Ok(()) => {}
+                            Ok(()) => self.update_buffer_param(cp.id, &*cp),
                             Err(GeneralError::ApiError(ApiError::PduError(
                                 PduError::ComParamNotSupported,
                             ))) => {}
@@ -449,10 +484,10 @@ impl PduLogicalLink {
             MapTarget::Definitions(v) => {
                 let mut table = PduComParamTable::with_capacity(v.len());
 
-                for (unique_id, set) in v.iter() {
-                    for def in set.iter() {
+                for entry in v.iter() {
+                    for def in entry.value().iter() {
                         let cp = def.blocking_build(&self.api)?;
-                        table.add(unique_id.to_owned(), cp);
+                        table.add(entry.key().to_owned(), cp);
                     }
                 }
 
@@ -479,10 +514,10 @@ impl PduLogicalLink {
                 MapTarget::Definitions(v) => {
                     let mut table = PduComParamTable::with_capacity(v.len());
 
-                    for (unique_id, set) in v.iter() {
-                        for def in set.iter() {
+                    for entry in v.iter() {
+                        for def in entry.iter() {
                             let cp = def.build(worker.as_ref()).await?;
-                            table.add(unique_id.to_owned(), cp);
+                            table.add(entry.key().to_owned(), cp);
                         }
                     }
 
@@ -552,6 +587,50 @@ impl PduLogicalLink {
         _module_event_tx: &mut broadcast::Sender<()>,
     ) -> StopReceive {
         false
+    }
+
+    /// ## WARNING
+    ///
+    /// Do not perform long blocking operations inside the closure!
+    pub fn inspect_active_buffer<T, F>(&self, f: F) -> T
+    where
+        F: Fn(&ParamsBuffer) -> T
+    {
+        let buffer = self.active_buffer.lock();
+        f(buffer.deref())
+    }
+
+    /// ## WARNING
+    ///
+    /// Do not perform long blocking operations inside the closure!
+    pub fn inspect_working_buffer<T, F>(&self, f: F) -> T
+    where
+        F: Fn(&ParamsBuffer) -> T
+    {
+        let buffer = self.working_buffer.lock();
+        f(buffer.deref())
+    }
+
+    fn update_buffer_param<T>(&self, id: PduObjectId, cp: &T)
+    where
+        T: IntoPduComParam
+    {
+        match cp.to_definition() {
+            Ok(v) => {
+                self.working_buffer
+                    .lock()
+                    .set
+                    .update(v);
+            }
+            Err(crate::types::pdu_com_param::table::MissingCommunicationParameterName) => {
+                warn!(
+                    "The communication parameter #{id} could not be updated in \
+                    the working buffer because its name has been anonymised. \
+                    Use ComParamDefinition when setting communication \
+                    parameters"
+                );
+            }
+        }
     }
 }
 
@@ -1115,5 +1194,37 @@ impl CopParamsBuilder for SendRecv {
         params.time = self.delay.as_millis() as _;
 
         params
+    }
+}
+
+#[derive(Clone)]
+pub struct ParamsBuffer {
+    pub set: PduComParamDefinitionSet,
+    pub table: PduComParamDefinitionTable
+}
+
+impl Default for ParamsBuffer {
+    fn default() -> Self {
+        Self {
+            set: PduComParamDefinitionSet::new(),
+            table: PduComParamDefinitionTable::new()
+        }
+    }
+}
+
+impl Debug for ParamsBuffer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(type_name::<Self>())
+            .field("set", &format!(
+                "{}({})",
+                type_name::<PduComParamDefinitionSet>(),
+                self.set.0.len()
+            ))
+            .field("table", &format!(
+                "{}({})",
+                type_name::<PduComParamDefinitionTable>(),
+                self.table.0.len()
+            ))
+            .finish()
     }
 }

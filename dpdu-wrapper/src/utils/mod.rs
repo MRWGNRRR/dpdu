@@ -277,3 +277,59 @@ impl Display for PtrRepr {
         }
     }
 }
+
+#[macro_export]
+macro_rules! com_param_set {
+    ($($value:expr),* $(,)?) => {{
+        use $crate::types::pdu_com_param::table::IntoPduComParam;
+
+        let map = $crate::DashMap::<
+            <$crate::types::pdu_com_param::PduComParam
+                as $crate::types::pdu_com_param::table::IntoPduComParam
+            >::Id,
+            $crate::types::pdu_com_param::PduComParam
+        >::new();
+
+        $(
+            let value: $crate::types::pdu_com_param::PduComParam = $value.into();
+            map.insert(value.id().clone(), value);
+        )*
+
+        $crate::types::pdu_com_param::table::ComParamDefinitionSet(map)
+    }};
+}
+
+#[macro_export]
+macro_rules! com_param_definition_set {
+    ($($value:expr),* $(,)?) => {{
+        use $crate::types::pdu_com_param::table::IntoPduComParam;
+
+        let map = $crate::dashmap::DashMap::<
+            <$crate::types::pdu_com_param::table::ComParamDefinition
+                as $crate::types::pdu_com_param::table::IntoPduComParam
+            >::Id,
+            $crate::types::pdu_com_param::table::ComParamDefinition
+        >::new();
+
+        $(
+            let value: $crate::types::pdu_com_param::table::ComParamDefinition = $value.into();
+            map.insert(value.id().clone(), value);
+        )*
+
+        $crate::types::pdu_com_param::table::ComParamDefinitionSet(map)
+    }};
+}
+
+#[macro_export]
+macro_rules! com_param_table {
+    ($($id:expr => $set:expr),* $(,)?) => {{
+        let map = $crate::dashmap::DashMap::new();
+
+        $(
+            let set = $set;
+            map.insert($id, set);
+        )*
+
+        $crate::types::pdu_com_param::table::ComParamDefinitionTable(map)
+    }};
+}

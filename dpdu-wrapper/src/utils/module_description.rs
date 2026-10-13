@@ -3,6 +3,7 @@
 use self::raw_xml_types::Container;
 use crate::utils::get_bomless_file_reader;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -221,7 +222,7 @@ impl PduModuleDescription {
                     let default_value = match MdfComParamValue::from_data_type_and_str(
                         cp.id,
                         &data_type,
-                        &cp.default_value,
+                        cp.default_value.trim(),
                     ) {
                         Ok(v) => v,
                         Err(_) => MdfComParamValue::Uncategorized(cp.default_value.clone()),
@@ -294,12 +295,58 @@ impl PduModuleDescription {
                             let Some(com_param) = com_params.get_by_eid(&param.com_param_ref.to)
                             else {
                                 debug!(
-                                    "BusType #{} refers to an unknown COMPARAM: {}",
+                                    "BusType #{} refers to an unknown comm. param: {}",
                                     bt.id, param.com_param_ref.to
                                 );
                                 continue 'p;
                             };
-                            bus_com_params.insert(com_param.id, com_param.clone());
+
+                            let mut cp = com_param.deref().clone();
+
+                            cp.default_value = match MdfComParamValue::from_data_type_and_str(
+                                cp.id,
+                                &cp.data_type,
+                                param.default_value.trim()
+                            ) {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    MdfComParamValue::Uncategorized(param.default_value.clone())
+                                }
+                            };
+
+                            cp.min_value = match &param.min_value {
+                                Some(v) => {
+                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                        cp.id,
+                                        &cp.data_type,
+                                        v.trim()
+                                    ) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            MdfComParamValue::Uncategorized(param.default_value.clone())
+                                        }
+                                    })
+                                }
+                                None => None
+                            };
+
+                            cp.max_value = match &param.min_value {
+                                Some(v) => {
+                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                        cp.id,
+                                        &cp.data_type,
+                                        v.trim()
+                                    ) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            MdfComParamValue::Uncategorized(param.default_value.clone())
+                                        }
+                                    })
+                                }
+                                None => None
+                            };
+
+                            bus_com_params.insert(com_param.id, Arc::new(cp));
                         }
                     }
 
@@ -340,12 +387,58 @@ impl PduModuleDescription {
                             let Some(com_param) = com_params.get_by_eid(&param.com_param_ref.to)
                             else {
                                 debug!(
-                                    "Protocol #{} refers to an unknown ComParam: {}",
+                                    "Protocol #{} refers to an unknown comm. param: {}",
                                     p.id, param.com_param_ref.to
                                 );
                                 continue 'p;
                             };
-                            protocol_com_params.insert(com_param.id, com_param.clone());
+
+                            let mut cp = com_param.deref().clone();
+
+                            cp.default_value = match MdfComParamValue::from_data_type_and_str(
+                                cp.id,
+                                &cp.data_type,
+                                param.default_value.trim()
+                            ) {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    MdfComParamValue::Uncategorized(param.default_value.clone())
+                                }
+                            };
+
+                            cp.min_value = match &param.min_value {
+                                Some(v) => {
+                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                        cp.id,
+                                        &cp.data_type,
+                                        v.trim()
+                                    ) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            MdfComParamValue::Uncategorized(param.default_value.clone())
+                                        }
+                                    })
+                                }
+                                None => None
+                            };
+
+                            cp.max_value = match &param.min_value {
+                                Some(v) => {
+                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                        cp.id,
+                                        &cp.data_type,
+                                        v.trim()
+                                    ) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            MdfComParamValue::Uncategorized(param.default_value.clone())
+                                        }
+                                    })
+                                }
+                                None => None
+                            };
+
+                            protocol_com_params.insert(com_param.id, Arc::new(cp));
                         }
                     }
 
@@ -771,7 +864,7 @@ pub struct MdfProtocol {
     pub com_params: MdfComParamWrapper,
 }
 
-#[derive(Debug, strum::EnumString)]
+#[derive(Debug, Clone, strum::EnumString)]
 pub enum MdfComParamDataType {
     #[strum(serialize = "PDU_PT_UNUM8", serialize = "UNUM8")]
     UnsignedNum8, // UNUM8 aka u8
@@ -801,7 +894,7 @@ pub enum MdfComParamDataType {
     LongField,
 }
 
-#[derive(Debug, strum::EnumString)]
+#[derive(Debug, Clone, strum::EnumString)]
 pub enum MdfComParamClass {
     #[strum(serialize = "PDU_PC_TIMING", serialize = "TIMING")]
     Timing,
@@ -825,7 +918,7 @@ pub enum MdfComParamClass {
     TesterPresent,
 }
 
-#[derive(Debug, strum::EnumString)]
+#[derive(Debug, Clone, strum::EnumString)]
 pub enum MdfComParamLayer {
     #[strum(
         serialize = "PDU_PL_APPLICATION",
@@ -849,7 +942,7 @@ pub enum MdfComParamLayer {
     Physical,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MdfComParamValue {
     UnsignedNum8(u8),
     SignedNum8(i8),
@@ -858,21 +951,46 @@ pub enum MdfComParamValue {
     UnsignedNum32(u32),
     SignedNum32(i32),
     LongField {
-        max_values: u8,
-        actual_values: u8,
+        max_values: u32,
+        actual_values: u32,
         data: Vec<u32>,
     },
     ByteField {
-        max_values: u8,
-        actual_values: u8,
+        max_values: u32,
+        actual_values: u32,
         data: Vec<u8>,
     },
     StructField {
-        raw: String, //max_values: u8,
-                     //actual_values: u8,
-                     //data: Vec<Vec<u32>>
+        max_values: u32,
+        actual_values: u32,
+        data: MdfComParamStructFieldData
     },
     Uncategorized(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct MdfComParamSessionTimingStructField {
+    pub session: u16,
+    pub p2_max_high: u8,
+    pub p2_max_low: u8,
+    pub p2_star_high: u8,
+    pub p2_star_low: u8
+}
+
+#[derive(Debug, Clone)]
+pub struct MdfComParamAccessTimingStructField {
+    pub p2_min: u8,
+    pub p2_max: u8,
+    pub p3_min: u8,
+    pub p3_max: u8,
+    pub p4_min: u8,
+    pub timing_set: u8
+}
+
+#[derive(Debug, Clone)]
+pub enum MdfComParamStructFieldData {
+    SessionTiming(Vec<MdfComParamSessionTimingStructField>),
+    AccessTiming(Vec<MdfComParamAccessTimingStructField>)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -885,6 +1003,9 @@ pub enum MdfComParamValueParseError {
 
     #[error("long field parse error: {0}")]
     LongFieldParseError(&'static str),
+
+    #[error("struct field parse error: {0}")]
+    StructFieldParseError(&'static str),
 
     #[error("empty value")]
     EmptyValue,
@@ -961,9 +1082,13 @@ impl MdfComParamValue {
 
                 for (i, entry) in entries.iter().enumerate() {
                     let radix = if is_hex_string_repr(entry) { 16 } else { 10 };
+                    let entry = entry
+                        .strip_prefix("0x")
+                        .or_else(|| entry.strip_prefix("0X"))
+                        .unwrap_or(entry);
 
                     if i == 0 {
-                        let Ok(v) = u8::from_str_radix(entry, radix) else {
+                        let Ok(v) = u32::from_str_radix(entry, radix) else {
                             debug!(
                                 "ComParam #{com_param_id}: malformed byte field max length: {str}"
                             );
@@ -973,7 +1098,7 @@ impl MdfComParamValue {
                         };
                         max_bytes = v;
                     } else if i == 1 {
-                        let Ok(v) = u8::from_str_radix(entry, radix) else {
+                        let Ok(v) = u32::from_str_radix(entry, radix) else {
                             debug!(
                                 "ComParam #{com_param_id}: malformed byte field actual length: {str}"
                             );
@@ -1016,9 +1141,13 @@ impl MdfComParamValue {
 
                 for (i, entry) in entries.iter().enumerate() {
                     let radix = if is_hex_string_repr(entry) { 16 } else { 10 };
+                    let entry = entry
+                        .strip_prefix("0x")
+                        .or_else(|| entry.strip_prefix("0X"))
+                        .unwrap_or(entry);
 
                     if i == 0 {
-                        let Ok(v) = u8::from_str_radix(entry, radix) else {
+                        let Ok(v) = u32::from_str_radix(entry, radix) else {
                             debug!(
                                 "ComParam #{com_param_id}: malformed long array max length: {str}"
                             );
@@ -1028,7 +1157,7 @@ impl MdfComParamValue {
                         };
                         max_values = v;
                     } else if i == 1 {
-                        let Ok(v) = u8::from_str_radix(entry, radix) else {
+                        let Ok(v) = u32::from_str_radix(entry, radix) else {
                             debug!(
                                 "ComParam #{com_param_id}: malformed long array actual length: {str}"
                             );
@@ -1054,14 +1183,136 @@ impl MdfComParamValue {
                     data,
                 })
             }
-            MdfComParamDataType::StructField => Ok(MdfComParamValue::StructField {
-                raw: str.to_owned(),
-            }),
+            MdfComParamDataType::StructField => {
+                let entries = str.split(' ').collect::<Vec<&str>>();
+                if entries.len() < 3 {
+                    debug!("ComParam #{com_param_id}: too short struct field value: {str}");
+                    return Err(MdfComParamValueParseError::ByteFieldParseError(
+                        "Too short value",
+                    ));
+                }
+
+                enum StructType {
+                    AccessTiming,
+                    SessionTiming
+                }
+
+                let mut max_values = 0;
+                let mut actual_values = 0;
+                let mut data: Option<MdfComParamStructFieldData> = None;
+                let mut accumulator: Vec<u32> = vec![];
+
+                for (i, entry) in entries.iter().enumerate() {
+                    let radix = is_hex_string_repr(entry).then(|| 16).unwrap_or(10);
+                    let entry = entry
+                        .strip_prefix("0x")
+                        .or_else(|| entry.strip_prefix("0X"))
+                        .unwrap_or(entry);
+
+                    if i == 0 { // struct type
+                        let Ok(ty) = u32::from_str_radix(entry, radix) else {
+                            debug!(
+                                "ComParam #{com_param_id}: malformed struct field type: {str}"
+                            );
+                            return Err(MdfComParamValueParseError::StructFieldParseError(
+                                "Error of parsing the struct type of struct field array",
+                            ));
+                        };
+                        data = Some(match ty {
+                            1 => MdfComParamStructFieldData::SessionTiming(vec![]),
+                            2 => MdfComParamStructFieldData::AccessTiming(vec![]),
+                            _ => {
+                                debug!(
+                                    "ComParam #{com_param_id}: unknown struct field type: {str}"
+                                );
+                                return Err(MdfComParamValueParseError::StructFieldParseError(
+                                    "Error of parsing the struct type of struct field array"
+                                ));
+                            }
+                        });
+                    } else if i == 1 { // max values
+                        let Ok(v) = u32::from_str_radix(entry, radix) else {
+                            debug!(
+                                "ComParam #{com_param_id}: malformed struct field array max length: {str}"
+                            );
+                            return Err(MdfComParamValueParseError::StructFieldParseError(
+                                "Error of parsing the max length of struct field array",
+                            ));
+                        };
+                        max_values = v;
+                    } else if i == 2 { // actual values
+                        let Ok(v) = u32::from_str_radix(entry, radix) else {
+                            debug!(
+                                "ComParam #{com_param_id}: malformed struct field array actual length: {str}"
+                            );
+                            return Err(MdfComParamValueParseError::StructFieldParseError(
+                                "Error of parsing the actual length of struct field array",
+                            ));
+                        };
+                        actual_values = v;
+                    } else { // data
+                        accumulator.push(match u32::from_str_radix(entry, radix) {
+                            Ok(v) => v,
+                            Err(_err) => {
+                                debug!("entries: {entries:?}");
+                                debug!(
+                                    "ComParam #{com_param_id}: malformed struct field entry at pos {i}: {str}"
+                                );
+                                return Err(MdfComParamValueParseError::LongFieldParseError(
+                                    "Error of parsing the struct field array entry",
+                                ));
+                            }
+                        });
+                        match data.as_mut().expect("internal error: struct type was set at zero entry") {
+                            MdfComParamStructFieldData::AccessTiming(v) => {
+                                if accumulator.len() == 6 {
+                                    // TODO : check fields bounds
+                                    v.push(MdfComParamAccessTimingStructField {
+                                        p2_min: accumulator[0] as _,
+                                        p2_max: accumulator[1] as _,
+                                        p3_min: accumulator[2] as _,
+                                        p3_max: accumulator[3] as _,
+                                        p4_min: accumulator[4] as _,
+                                        timing_set: accumulator[5] as _,
+                                    });
+                                    accumulator.clear();
+                                }
+                            }
+                            MdfComParamStructFieldData::SessionTiming(v) => {
+                                if accumulator.len() == 5 {
+                                    // TODO : check fields bounds
+                                    v.push(MdfComParamSessionTimingStructField {
+                                        session: accumulator[0] as _,
+                                        p2_max_high: accumulator[1] as _,
+                                        p2_max_low: accumulator[2] as _,
+                                        p2_star_high: accumulator[3] as _,
+                                        p2_star_low: accumulator[4] as _,
+                                    });
+                                    accumulator.clear();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if accumulator.len() != 0 {
+                    debug!("ComParam #{com_param_id}: malformed struct field array");
+                    return Err(MdfComParamValueParseError::LongFieldParseError(
+                        "Error of parsing the struct field array",
+                    ));
+                }
+
+                Ok(MdfComParamValue::StructField {
+                    max_values,
+                    actual_values,
+                    data: data.expect("internal error: struct type was set at zero entry")
+                })
+            },
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MdfComParam {
     pub id: u32,
     pub eid: String,
@@ -1329,6 +1580,12 @@ mod raw_xml_types {
     pub struct BusProtocolComParam {
         #[serde(rename = "DEFAULT_VALUE")]
         pub default_value: String,
+
+        #[serde(rename = "MIN_VALUE")]
+        pub min_value: Option<String>,
+
+        #[serde(rename = "MAX_VALUE")]
+        pub max_value: Option<String>,
 
         #[serde(rename = "COMPARAM")]
         pub com_param_ref: ComParamRef,

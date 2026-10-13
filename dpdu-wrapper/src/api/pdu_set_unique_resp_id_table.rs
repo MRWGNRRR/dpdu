@@ -28,17 +28,18 @@ impl PduApi {
 
         let mut temp_unique_groups: Vec<EcuUniqueRespData> = Vec::with_capacity(table.len());
 
-        for (key, (unique_resp_identifier, group_set)) in table.iter().enumerate() {
-            let mut com_param_set = Vec::with_capacity(group_set.len());
+        // for (key, (unique_resp_identifier, group_set)) in table.iter().enumerate() {
+        for (key, entry) in table.iter().enumerate() {
+            let mut com_param_set = Vec::with_capacity(entry.value().len());
 
             trace!(
                 func = FUNC,
                 group = key,
-                unique_resp_identifier,
+                unique_resp_identifier = entry.key(),
                 "D-PDU API Call Args"
             );
 
-            for cp in group_set.iter() {
+            for cp in entry.value().iter() {
                 if !matches!(cp.class, PduPc::UniqueId) {
                     error!(
                         com_param = cp.get_debug_name(),
@@ -75,7 +76,7 @@ impl PduApi {
             let temp_com_param_group = temp_com_param_groups.get(&key).expect("inserted above");
 
             temp_unique_groups.push(EcuUniqueRespData {
-                unique_resp_identifier: *unique_resp_identifier,
+                unique_resp_identifier: *entry.key(),
                 num_param_items: temp_com_param_group.len() as _,
                 p_params: take_slice_ptr(temp_com_param_group.as_slice()),
             });

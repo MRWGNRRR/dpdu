@@ -18,10 +18,10 @@ use crate::types::pdu_com_param::table::{
     ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable,
 };
 use crate::utils::ecu_name_to_unique_resp_id;
-use map_macro::{hash_map_e, hash_set};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::{com_param_definition_set, com_param_set, com_param_table};
 
 /// ISO-TP transport stack (ISO 15765-2).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -346,37 +346,37 @@ impl ComParamDefinitionStack for IsoTpStack {
     }
 
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
-        ComParamDefinitionSet(hash_set! {
+        com_param_definition_set! {
             // Timing.
-            self.ar.into(),
-            self.r#as.into(),
-            self.br.into(),
-            self.bs.into(),
-            self.cr.into(),
-            self.cs.into(),
-            self.st_min.into(),
-            self.st_min_override.into(),
+            self.ar,
+            self.r#as,
+            self.br,
+            self.bs,
+            self.cr,
+            self.cs,
+            self.st_min,
+            self.st_min_override,
 
             // Com.
-            self.block_size.into(),
-            self.block_size_override.into(),
-            self.can_data_size_offset.into(),
-            self.can_filler_byte.into(),
-            self.can_filler_byte_handling.into(),
-            self.can_first_consecutive_frame_value.into(),
-            self.can_func_req_ext_addr.into(),
-            self.can_func_req_format.into(),
-            self.can_func_req_id.into(),
-            self.can_max_num_wait_frames.into(),
+            self.block_size,
+            self.block_size_override,
+            self.can_data_size_offset,
+            self.can_filler_byte,
+            self.can_filler_byte_handling,
+            self.can_first_consecutive_frame_value,
+            self.can_func_req_ext_addr,
+            self.can_func_req_format,
+            self.can_func_req_id,
+            self.can_max_num_wait_frames,
 
-            self.canfd_tx_max_data_length.into(),
-            self.max_first_frame_data_length.into(),
-            self.request_addr_mode.into(),
-            self.send_remote_frame.into(),
+            self.canfd_tx_max_data_length,
+            self.max_first_frame_data_length,
+            self.request_addr_mode,
+            self.send_remote_frame,
 
             // Error handling.
-            self.repeat_req_count_trans.into(),
-        })
+            self.repeat_req_count_trans,
+        }
     }
 
     fn build_table(&self) -> ComParamDefinitionTable<ComParamDefinition> {
@@ -386,18 +386,18 @@ impl ComParamDefinitionStack for IsoTpStack {
             ecu_name_to_unique_resp_id(&self.ecu_layer_short_name.0)
         };
 
-        ComParamDefinitionTable(hash_map_e! {
-            id => hash_set! {
-                self.can_phys_req_ext_addr.into(),
-                self.can_phys_req_format.into(),
-                self.can_phys_req_id.into(),
-                self.can_resp_uudt_ext_addr.into(),
-                self.can_resp_uudt_format.into(),
-                self.can_resp_uudt_id.into(),
-                self.can_resp_usdt_ext_addr.into(),
-                self.can_resp_usdt_format.into(),
-                self.can_resp_usdt_id.into(),
+        com_param_table! {
+            id => com_param_definition_set! {
+                self.can_phys_req_ext_addr,
+                self.can_phys_req_format,
+                self.can_phys_req_id,
+                self.can_resp_uudt_ext_addr,
+                self.can_resp_uudt_format,
+                self.can_resp_uudt_id,
+                self.can_resp_usdt_ext_addr,
+                self.can_resp_usdt_format,
+                self.can_resp_usdt_id,
             }
-        })
+        }
     }
 }

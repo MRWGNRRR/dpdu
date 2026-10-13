@@ -20,10 +20,10 @@ use crate::types::pdu_com_param::stack::ComParamDefinitionStack;
 use crate::types::pdu_com_param::table::{
     ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable,
 };
-use map_macro::hash_set;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::{com_param_definition_set, com_param_set};
 
 /// KWP2000 application stack (ISO 14230-3).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -379,50 +379,50 @@ impl ComParamDefinitionStack for KwpStack {
     }
 
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
-        ComParamDefinitionSet(hash_set! {
+        com_param_definition_set! {
             // Timings.
-            self.cyclic_resp_timeout.into(),
-            self.modify_timing.into(),
-            self.p2_max.into(),
-            self.p2_min.into(),
-            self.p2_star.into(),
-            self.p3_min.into(),
-            self.change_speed_tx_delay.into(),
+            self.cyclic_resp_timeout,
+            self.modify_timing,
+            self.p2_max,
+            self.p2_min,
+            self.p2_star,
+            self.p3_min,
+            self.change_speed_tx_delay,
 
             // Error handling.
-            self.rc21_completion_timeout.into(),
-            self.rc21_handling.into(),
-            self.rc21_request_time.into(),
-            self.rc23_completion_timeout.into(),
-            self.rc23_handling.into(),
-            self.rc23_request_time.into(),
-            self.rc78_completion_timeout.into(),
-            self.rc78_handling.into(),
-            self.rc_byte_offset.into(),
-            self.repeat_req_count_app.into(),
-            self.suspend_queue_on_error.into(),
+            self.rc21_completion_timeout,
+            self.rc21_handling,
+            self.rc21_request_time,
+            self.rc23_completion_timeout,
+            self.rc23_handling,
+            self.rc23_request_time,
+            self.rc78_completion_timeout,
+            self.rc78_handling,
+            self.rc_byte_offset,
+            self.repeat_req_count_app,
+            self.suspend_queue_on_error,
 
             // Com.
-            self.change_speed_ctrl.into(),
-            self.change_speed_message.clone().into(),
-            self.change_speed_rate.into(),
-            self.change_speed_res_ctrl.into(),
-            self.enable_performance_test.into(),
-            self.loopback.into(),
-            self.start_msg_ind_enable.into(),
-            self.sw_can_high_voltage.into(),
-            self.transmit_ind_enable.into(),
+            self.change_speed_ctrl,
+            self.change_speed_message.clone(),
+            self.change_speed_rate,
+            self.change_speed_res_ctrl,
+            self.enable_performance_test,
+            self.loopback,
+            self.start_msg_ind_enable,
+            self.sw_can_high_voltage,
+            self.transmit_ind_enable,
 
             // Tester present.
-            self.tester_present_addr_mode.into(),
-            self.tester_present_exp_neg_resp.clone().into(),
-            self.tester_present_exp_pos_resp.clone().into(),
-            self.tester_present_handling.into(),
-            self.tester_present_message.clone().into(),
-            self.tester_present_req_rsp.into(),
-            self.tester_present_send_type.into(),
-            self.tester_present_time.into(),
-        })
+            self.tester_present_addr_mode,
+            self.tester_present_exp_neg_resp.clone(),
+            self.tester_present_exp_pos_resp.clone(),
+            self.tester_present_handling,
+            self.tester_present_message.clone(),
+            self.tester_present_req_rsp,
+            self.tester_present_send_type,
+            self.tester_present_time,
+        }
     }
 
     fn build_table(&self) -> ComParamDefinitionTable<ComParamDefinition> {
