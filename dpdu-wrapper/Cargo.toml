@@ -10,26 +10,26 @@ documentation = "https://docs.rs/dpdu-wrapper"
 
 [dependencies]
 dpdu-wrapper-support = { version = "0.1.1", path = "../dpdu-wrapper-support" }
-thiserror = { version = "2.0.18" }
+thiserror = { version = "2.0.21" }
 quick-xml = { version = "0.42.0", features = ["serialize"] }
-serde = { version = "1.0.228", features = ["default", "derive"] }
+serde = { version = "1.0.229", features = ["default", "derive"] }
 winreg = { version = "0.56.0" }
-cfg-if = { version = "1.0.4" }
+cfg-if = { version = "1.0.5" }
 tracing = { version = "0.1.44" }
 exe = { version = "0.5.7" }
-regex = { version = "1.12.4" }
+regex = { version = "1.13.1" }
 semver = { version = "1.0.28" }
 strum = { version = "0.28.0", features = ["derive", "strum_macros"] }
 dpdu-api-types = { version = "0.10.2", path = "../dpdu-api-types", features = ["full"] }
 libloading = { version = "0.9.0" }
-rand = { version = "0.10.1" }
+rand = { version = "0.10.3" }
 chrono = { version = "0.4.45" }
 murmur3 = { version = "0.5.2" }
-tokio = { version = "1.52.3", features = ["sync", "macros", "rt"] }
+tokio = { version = "1.53.2", features = ["sync", "macros", "rt"] }
 flume = { version = "0.12.0" }
 parking_lot = { version = "0.12.5" }
-serde_json = { version = "1.0.150" }
-async-trait = { version = "0.1.89" }
+serde_json = { version = "1.0.154" }
+async-trait = { version = "0.1.92" }
 neohook = { version = "0.16.0" }
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }
 thread_local = { version = "1.1.10" }
