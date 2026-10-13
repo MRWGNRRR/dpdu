@@ -1,3 +1,4 @@
+use crate::com_param_definition_set;
 use crate::types::pdu_com_param::single::com::{
     CpChangeSpeedCtrl, CpChangeSpeedMessage, CpChangeSpeedRate, CpChangeSpeedResCtrl,
     CpEnablePerformanceTest, CpLoopback, CpStartMsgIndEnable, CpSwCanHighVoltage,
@@ -23,7 +24,6 @@ use crate::types::pdu_com_param::table::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::{com_param_definition_set, com_param_set};
 
 /// KWP2000 application stack (ISO 14230-3).
 #[derive(Clone, Debug, Serialize, Deserialize)]

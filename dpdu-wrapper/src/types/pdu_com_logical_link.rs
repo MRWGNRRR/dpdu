@@ -1,9 +1,11 @@
-use std::any::type_name;
 use crate::api::{ApiError, ApiResult, PduApi};
 use crate::constants::COP_EVENTS_QUEUE_SIZE;
 use crate::error::{GeneralError, GeneralResult};
 use crate::handle_manager::PduHandleManager;
-use crate::types::pdu_com_param::table::{ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable, IntoPduComParam, MapTarget, PduComParamDefinitionSet, PduComParamDefinitionTable, PduComParamTable, SetTarget};
+use crate::types::pdu_com_param::table::{
+    IntoPduComParam, MapTarget, PduComParamDefinitionSet, PduComParamDefinitionTable,
+    PduComParamTable, SetTarget,
+};
 use crate::types::pdu_com_primitive::{
     ComParamBuffer, ExpectedResponse, MaskData, PduPrimitive, PrimitiveParams,
     PrimitiveStatusStore, PrimitiveType, ReceiveCycles, ResponseType, SendCycles, TransmitFlags,
@@ -18,16 +20,15 @@ use crate::worker::{PduAsyncWorker, Query};
 use bytes::Bytes;
 use dpdu_api_types::{PduError, PduStatus};
 use parking_lot::Mutex;
+use std::any::type_name;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, Once, OnceLock, Weak};
-use std::sync::atomic::AtomicBool;
 use std::thread::spawn;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
 use tracing::{debug, error, warn};
-use crate::types::pdu_com_param::PduComParam;
 
 #[derive(Debug)]
 pub struct PduLogicalLink {
@@ -373,10 +374,7 @@ impl PduLogicalLink {
                     };
                     match self.api.pdu_set_com_param(h_mod, h_cll, &cp) {
                         Ok(()) => {
-                            self.working_buffer
-                                .lock()
-                                .set
-                                .update(def.clone());
+                            self.working_buffer.lock().set.update(def.clone());
                         }
                         Err(ApiError::PduError(PduError::ComParamNotSupported)) => {
                             continue;
@@ -482,7 +480,7 @@ impl PduLogicalLink {
 
         match map_target.into() {
             MapTarget::Definitions(v) => {
-                let mut table = PduComParamTable::with_capacity(v.len());
+                let table = PduComParamTable::with_capacity(v.len());
 
                 for entry in v.iter() {
                     for def in entry.value().iter() {
@@ -512,7 +510,7 @@ impl PduLogicalLink {
         match self.worker.get() {
             Some(worker) => match map_target.into() {
                 MapTarget::Definitions(v) => {
-                    let mut table = PduComParamTable::with_capacity(v.len());
+                    let table = PduComParamTable::with_capacity(v.len());
 
                     for entry in v.iter() {
                         for def in entry.iter() {
@@ -594,7 +592,7 @@ impl PduLogicalLink {
     /// Do not perform long blocking operations inside the closure!
     pub fn inspect_active_buffer<T, F>(&self, f: F) -> T
     where
-        F: Fn(&ParamsBuffer) -> T
+        F: Fn(&ParamsBuffer) -> T,
     {
         let buffer = self.active_buffer.lock();
         f(buffer.deref())
@@ -605,7 +603,7 @@ impl PduLogicalLink {
     /// Do not perform long blocking operations inside the closure!
     pub fn inspect_working_buffer<T, F>(&self, f: F) -> T
     where
-        F: Fn(&ParamsBuffer) -> T
+        F: Fn(&ParamsBuffer) -> T,
     {
         let buffer = self.working_buffer.lock();
         f(buffer.deref())
@@ -613,14 +611,11 @@ impl PduLogicalLink {
 
     fn update_buffer_param<T>(&self, id: PduObjectId, cp: &T)
     where
-        T: IntoPduComParam
+        T: IntoPduComParam,
     {
         match cp.to_definition() {
             Ok(v) => {
-                self.working_buffer
-                    .lock()
-                    .set
-                    .update(v);
+                self.working_buffer.lock().set.update(v);
             }
             Err(crate::types::pdu_com_param::table::MissingCommunicationParameterName) => {
                 warn!(
@@ -1200,14 +1195,14 @@ impl CopParamsBuilder for SendRecv {
 #[derive(Clone)]
 pub struct ParamsBuffer {
     pub set: PduComParamDefinitionSet,
-    pub table: PduComParamDefinitionTable
+    pub table: PduComParamDefinitionTable,
 }
 
 impl Default for ParamsBuffer {
     fn default() -> Self {
         Self {
             set: PduComParamDefinitionSet::new(),
-            table: PduComParamDefinitionTable::new()
+            table: PduComParamDefinitionTable::new(),
         }
     }
 }
@@ -1215,16 +1210,22 @@ impl Default for ParamsBuffer {
 impl Debug for ParamsBuffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(type_name::<Self>())
-            .field("set", &format!(
-                "{}({})",
-                type_name::<PduComParamDefinitionSet>(),
-                self.set.0.len()
-            ))
-            .field("table", &format!(
-                "{}({})",
-                type_name::<PduComParamDefinitionTable>(),
-                self.table.0.len()
-            ))
+            .field(
+                "set",
+                &format!(
+                    "{}({})",
+                    type_name::<PduComParamDefinitionSet>(),
+                    self.set.0.len()
+                ),
+            )
+            .field(
+                "table",
+                &format!(
+                    "{}({})",
+                    type_name::<PduComParamDefinitionTable>(),
+                    self.table.0.len()
+                ),
+            )
             .finish()
     }
 }

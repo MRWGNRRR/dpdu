@@ -306,7 +306,7 @@ impl PduModuleDescription {
                             cp.default_value = match MdfComParamValue::from_data_type_and_str(
                                 cp.id,
                                 &cp.data_type,
-                                param.default_value.trim()
+                                param.default_value.trim(),
                             ) {
                                 Ok(v) => v,
                                 Err(_) => {
@@ -315,35 +315,35 @@ impl PduModuleDescription {
                             };
 
                             cp.min_value = match &param.min_value {
-                                Some(v) => {
-                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                Some(v) => Some(
+                                    match MdfComParamValue::from_data_type_and_str(
                                         cp.id,
                                         &cp.data_type,
-                                        v.trim()
+                                        v.trim(),
                                     ) {
                                         Ok(v) => v,
-                                        Err(_) => {
-                                            MdfComParamValue::Uncategorized(param.default_value.clone())
-                                        }
-                                    })
-                                }
-                                None => None
+                                        Err(_) => MdfComParamValue::Uncategorized(
+                                            param.default_value.clone(),
+                                        ),
+                                    },
+                                ),
+                                None => None,
                             };
 
                             cp.max_value = match &param.min_value {
-                                Some(v) => {
-                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                Some(v) => Some(
+                                    match MdfComParamValue::from_data_type_and_str(
                                         cp.id,
                                         &cp.data_type,
-                                        v.trim()
+                                        v.trim(),
                                     ) {
                                         Ok(v) => v,
-                                        Err(_) => {
-                                            MdfComParamValue::Uncategorized(param.default_value.clone())
-                                        }
-                                    })
-                                }
-                                None => None
+                                        Err(_) => MdfComParamValue::Uncategorized(
+                                            param.default_value.clone(),
+                                        ),
+                                    },
+                                ),
+                                None => None,
                             };
 
                             bus_com_params.insert(com_param.id, Arc::new(cp));
@@ -398,7 +398,7 @@ impl PduModuleDescription {
                             cp.default_value = match MdfComParamValue::from_data_type_and_str(
                                 cp.id,
                                 &cp.data_type,
-                                param.default_value.trim()
+                                param.default_value.trim(),
                             ) {
                                 Ok(v) => v,
                                 Err(_) => {
@@ -407,35 +407,35 @@ impl PduModuleDescription {
                             };
 
                             cp.min_value = match &param.min_value {
-                                Some(v) => {
-                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                Some(v) => Some(
+                                    match MdfComParamValue::from_data_type_and_str(
                                         cp.id,
                                         &cp.data_type,
-                                        v.trim()
+                                        v.trim(),
                                     ) {
                                         Ok(v) => v,
-                                        Err(_) => {
-                                            MdfComParamValue::Uncategorized(param.default_value.clone())
-                                        }
-                                    })
-                                }
-                                None => None
+                                        Err(_) => MdfComParamValue::Uncategorized(
+                                            param.default_value.clone(),
+                                        ),
+                                    },
+                                ),
+                                None => None,
                             };
 
                             cp.max_value = match &param.min_value {
-                                Some(v) => {
-                                    Some(match MdfComParamValue::from_data_type_and_str(
+                                Some(v) => Some(
+                                    match MdfComParamValue::from_data_type_and_str(
                                         cp.id,
                                         &cp.data_type,
-                                        v.trim()
+                                        v.trim(),
                                     ) {
                                         Ok(v) => v,
-                                        Err(_) => {
-                                            MdfComParamValue::Uncategorized(param.default_value.clone())
-                                        }
-                                    })
-                                }
-                                None => None
+                                        Err(_) => MdfComParamValue::Uncategorized(
+                                            param.default_value.clone(),
+                                        ),
+                                    },
+                                ),
+                                None => None,
                             };
 
                             protocol_com_params.insert(com_param.id, Arc::new(cp));
@@ -963,7 +963,7 @@ pub enum MdfComParamValue {
     StructField {
         max_values: u32,
         actual_values: u32,
-        data: MdfComParamStructFieldData
+        data: MdfComParamStructFieldData,
     },
     Uncategorized(String),
 }
@@ -974,7 +974,7 @@ pub struct MdfComParamSessionTimingStructField {
     pub p2_max_high: u8,
     pub p2_max_low: u8,
     pub p2_star_high: u8,
-    pub p2_star_low: u8
+    pub p2_star_low: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -984,13 +984,13 @@ pub struct MdfComParamAccessTimingStructField {
     pub p3_min: u8,
     pub p3_max: u8,
     pub p4_min: u8,
-    pub timing_set: u8
+    pub timing_set: u8,
 }
 
 #[derive(Debug, Clone)]
 pub enum MdfComParamStructFieldData {
     SessionTiming(Vec<MdfComParamSessionTimingStructField>),
-    AccessTiming(Vec<MdfComParamAccessTimingStructField>)
+    AccessTiming(Vec<MdfComParamAccessTimingStructField>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1194,7 +1194,7 @@ impl MdfComParamValue {
 
                 enum StructType {
                     AccessTiming,
-                    SessionTiming
+                    SessionTiming,
                 }
 
                 let mut max_values = 0;
@@ -1209,11 +1209,10 @@ impl MdfComParamValue {
                         .or_else(|| entry.strip_prefix("0X"))
                         .unwrap_or(entry);
 
-                    if i == 0 { // struct type
+                    if i == 0 {
+                        // struct type
                         let Ok(ty) = u32::from_str_radix(entry, radix) else {
-                            debug!(
-                                "ComParam #{com_param_id}: malformed struct field type: {str}"
-                            );
+                            debug!("ComParam #{com_param_id}: malformed struct field type: {str}");
                             return Err(MdfComParamValueParseError::StructFieldParseError(
                                 "Error of parsing the struct type of struct field array",
                             ));
@@ -1226,11 +1225,12 @@ impl MdfComParamValue {
                                     "ComParam #{com_param_id}: unknown struct field type: {str}"
                                 );
                                 return Err(MdfComParamValueParseError::StructFieldParseError(
-                                    "Error of parsing the struct type of struct field array"
+                                    "Error of parsing the struct type of struct field array",
                                 ));
                             }
                         });
-                    } else if i == 1 { // max values
+                    } else if i == 1 {
+                        // max values
                         let Ok(v) = u32::from_str_radix(entry, radix) else {
                             debug!(
                                 "ComParam #{com_param_id}: malformed struct field array max length: {str}"
@@ -1240,7 +1240,8 @@ impl MdfComParamValue {
                             ));
                         };
                         max_values = v;
-                    } else if i == 2 { // actual values
+                    } else if i == 2 {
+                        // actual values
                         let Ok(v) = u32::from_str_radix(entry, radix) else {
                             debug!(
                                 "ComParam #{com_param_id}: malformed struct field array actual length: {str}"
@@ -1250,7 +1251,8 @@ impl MdfComParamValue {
                             ));
                         };
                         actual_values = v;
-                    } else { // data
+                    } else {
+                        // data
                         accumulator.push(match u32::from_str_radix(entry, radix) {
                             Ok(v) => v,
                             Err(_err) => {
@@ -1263,7 +1265,10 @@ impl MdfComParamValue {
                                 ));
                             }
                         });
-                        match data.as_mut().expect("internal error: struct type was set at zero entry") {
+                        match data
+                            .as_mut()
+                            .expect("internal error: struct type was set at zero entry")
+                        {
                             MdfComParamStructFieldData::AccessTiming(v) => {
                                 if accumulator.len() == 6 {
                                     // TODO : check fields bounds
@@ -1305,9 +1310,9 @@ impl MdfComParamValue {
                 Ok(MdfComParamValue::StructField {
                     max_values,
                     actual_values,
-                    data: data.expect("internal error: struct type was set at zero entry")
+                    data: data.expect("internal error: struct type was set at zero entry"),
                 })
-            },
+            }
         }
     }
 }

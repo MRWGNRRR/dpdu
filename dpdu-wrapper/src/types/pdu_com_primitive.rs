@@ -1,5 +1,6 @@
 use crate::api::PduApi;
 use crate::error::{GeneralError, GeneralResult};
+use crate::types::pdu_com_logical_link::PduLogicalLink;
 use crate::types::pdu_event::{
     ErrorEventStore, PduErrorEvent, PduEvent, PduEventData, PduResultEvent, StopReceive,
 };
@@ -15,7 +16,6 @@ use std::thread::spawn;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::spawn_blocking;
 use tracing::{debug, error, warn};
-use crate::types::pdu_com_logical_link::PduLogicalLink;
 
 pub type PrimitiveResult<T> = std::result::Result<T, PrimitiveError>;
 
@@ -353,8 +353,7 @@ impl PduPrimitive {
         } else {
             warn!(
                 h_cll = self.h_cll,
-                h_cop,
-                "The logical link is abnormally destroyed at the start of the primitive."
+                h_cop, "The logical link is abnormally destroyed at the start of the primitive."
             );
         }
     }

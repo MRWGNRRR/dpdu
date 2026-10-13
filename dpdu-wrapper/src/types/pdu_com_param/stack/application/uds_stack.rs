@@ -1,3 +1,4 @@
+use crate::com_param_definition_set;
 use crate::types::pdu_com_param::single::com::{
     CpChangeSpeedCtrl, CpChangeSpeedMessage, CpChangeSpeedRate, CpChangeSpeedResCtrl,
     CpEnablePerformanceTest, CpLoopback, CpStartMsgIndEnable, CpSwCanHighVoltage,
@@ -24,7 +25,6 @@ use crate::types::pdu_com_param::table::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::{com_param_definition_set, com_param_set};
 
 /// UDS application stack (ISO 14229-3).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -409,7 +409,7 @@ impl ComParamDefinitionStack for UdsStack {
         *self = new_self;
     }
 
-    fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> { 
+    fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
         com_param_definition_set! {
             // Timings.
             self.can_transmission_time,

@@ -1,18 +1,16 @@
 use crate::AsyncRuntimeTarget;
 use crate::api::{ApiError, PduApi};
 use crate::error::{GeneralError, GeneralResult};
-use crate::types::{PduCllHandle, PduModuleHandle, PduObjectId, PduUniqueRespIdentifier};
 use crate::types::pdu_com_param::{CpVariant, PduComParam};
+use crate::types::pdu_object::PduObjectIdSource;
+use crate::types::{PduCllHandle, PduModuleHandle, PduObjectId, PduUniqueRespIdentifier};
 use crate::utils::ecu_name_to_unique_resp_id;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use dpdu_api_types::{PduError, PduPc};
-use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use dashmap::{DashMap};
 use tokio::task::spawn_blocking;
-use crate::types::pdu_object::PduObjectIdSource;
 
 pub type PduComParamSet = ComParamDefinitionSet<PduComParam>;
 
@@ -65,7 +63,7 @@ where
 
 impl<T> Default for ComParamDefinitionSet<T>
 where
-    T: IntoPduComParam
+    T: IntoPduComParam,
 {
     fn default() -> Self {
         Self(DashMap::default())
@@ -85,7 +83,7 @@ where
 
 impl<T> ComParamDefinitionSet<T>
 where
-    T: IntoPduComParam
+    T: IntoPduComParam,
 {
     pub(crate) fn with_capacity(cap: usize) -> Self {
         ComParamDefinitionSet(DashMap::with_capacity(cap))
@@ -113,7 +111,7 @@ where
 
 impl<T> ComParamDefinitionSet<T>
 where
-    T: IntoPduComParam + 'static
+    T: IntoPduComParam + 'static,
 {
     pub fn update(&self, param: T) {
         if let Some(mut cp) = self.0.get_mut(param.id()) {
@@ -127,7 +125,7 @@ where
         set: &DashMap<T::Id, T>,
         api: &PduApi,
         h_mod: PduModuleHandle,
-        h_cll: PduCllHandle
+        h_cll: PduCllHandle,
     ) -> GeneralResult<()> {
         for mut cp in set.iter_mut() {
             match api.pdu_get_com_param(h_mod, h_cll, cp.get_pdu_object_id_source()) {
@@ -148,7 +146,7 @@ where
         &self,
         api: &PduApi,
         h_mod: PduModuleHandle,
-        h_cll: PduCllHandle
+        h_cll: PduCllHandle,
     ) -> GeneralResult<()> {
         Self::do_blocking_refresh_full(&self.0, api, h_mod, h_cll)
     }
@@ -158,14 +156,19 @@ where
         &self,
         runtime: impl Into<AsyncRuntimeTarget<'a>> + Send,
         h_mod: PduModuleHandle,
-        h_cll: PduCllHandle
+        h_cll: PduCllHandle,
     ) -> GeneralResult<()> {
         match runtime.into() {
             AsyncRuntimeTarget::Worker(worker) => {
                 for mut cp in self.0.iter_mut() {
-                    match worker.pdu_get_com_param_dedicated(h_mod, h_cll, cp.get_pdu_object_id_source()).await {
+                    match worker
+                        .pdu_get_com_param_dedicated(h_mod, h_cll, cp.get_pdu_object_id_source())
+                        .await
+                    {
                         Ok(v) => cp.set_variant(v.variant),
-                        Err(GeneralError::ApiError(ApiError::PduError(PduError::ComParamNotSupported))) => {
+                        Err(GeneralError::ApiError(ApiError::PduError(
+                            PduError::ComParamNotSupported,
+                        ))) => {
                             continue;
                         }
                         Err(err) => {
@@ -177,12 +180,11 @@ where
             AsyncRuntimeTarget::Api(api) => {
                 let api = api.clone_arc();
                 let mut self_map = self.0.clone();
-                let task = move || {
-                    Self::do_blocking_refresh_full(&mut self_map, &api, h_mod, h_cll)
-                };
-                spawn_blocking(task)
-                    .await
-                    .expect("internal error: PduComParamSet::do_blocking_refresh() task panicked")?;
+                let task =
+                    move || Self::do_blocking_refresh_full(&mut self_map, &api, h_mod, h_cll);
+                spawn_blocking(task).await.expect(
+                    "internal error: PduComParamSet::do_blocking_refresh() task panicked",
+                )?;
             }
         }
 
@@ -191,7 +193,9 @@ where
 }
 
 #[derive(Clone, Default)]
-pub struct ComParamDefinitionTable<T>(pub DashMap<PduUniqueRespIdentifier, ComParamDefinitionSet<T>>)
+pub struct ComParamDefinitionTable<T>(
+    pub DashMap<PduUniqueRespIdentifier, ComParamDefinitionSet<T>>,
+)
 where
     T: IntoPduComParam;
 
@@ -219,7 +223,9 @@ where
     }
 
     pub fn add(&self, id: PduUniqueRespIdentifier, com_param: T) -> &Self {
-        self.entry(id).or_default().insert(com_param.id().to_owned(), com_param);
+        self.entry(id)
+            .or_default()
+            .insert(com_param.id().to_owned(), com_param);
         self
     }
 
@@ -327,7 +333,7 @@ impl IntoPduComParam for PduComParam {
         Ok(ComParamDefinition {
             class: self.class,
             short_name: short_name.clone(),
-            variant: self.variant.clone()
+            variant: self.variant.clone(),
         })
     }
 
@@ -352,8 +358,7 @@ pub struct ComParamDefinition {
     pub variant: CpVariant,
 }
 
-#[derive(thiserror::Error)]
-#[derive(Debug, Copy, Clone)]
+#[derive(thiserror::Error, Debug, Copy, Clone)]
 #[error("the name of the communication parameter is missing")]
 pub struct MissingCommunicationParameterName;
 

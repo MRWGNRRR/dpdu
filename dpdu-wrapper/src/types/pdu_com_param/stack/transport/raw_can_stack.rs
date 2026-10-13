@@ -11,10 +11,10 @@ use crate::types::pdu_com_param::table::{
     ComParamDefinition, ComParamDefinitionSet, ComParamDefinitionTable,
 };
 use crate::utils::ecu_name_to_unique_resp_id;
+use crate::{com_param_definition_set, com_param_table};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::{com_param_definition_set, com_param_set, com_param_table};
 
 /// Raw CAN transport stack (ISO 11898-2).
 #[derive(Debug, Clone, Serialize, Deserialize)]

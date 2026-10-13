@@ -1,3 +1,4 @@
+use crate::com_param_definition_set;
 use crate::types::pdu_com_param::single::com::{
     CpChangeSpeedCtrl, CpChangeSpeedMessage, CpChangeSpeedRate, CpChangeSpeedResCtrl,
     CpEnablePerformanceTest, CpLoopback, CpSwCanHighVoltage, CpTransmitIndEnable,
@@ -13,7 +14,6 @@ use crate::types::pdu_com_param::table::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::{com_param_definition_set, com_param_set};
 
 /// Raw CAN application stack (ISO 11898-3).
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -288,8 +288,7 @@ impl ComParamDefinitionStack for KwpOnIsoTpOnDwCanStack {
     fn build_set(&self) -> ComParamDefinitionSet<ComParamDefinition> {
         let set = self.app_stack.build_set();
 
-        set
-            .merge(self.transport_stack.build_set())
+        set.merge(self.transport_stack.build_set())
             .merge(self.physical_stack.build_set());
 
         set

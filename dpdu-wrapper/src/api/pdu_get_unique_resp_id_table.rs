@@ -82,7 +82,7 @@ impl PduApi {
             unsafe { slice::from_raw_parts(table_ptr, table_len) }
         };
 
-        let mut map = PduComParamTable::with_capacity(table.len());
+        let map = PduComParamTable::with_capacity(table.len());
 
         trace!(
             func = FUNC,

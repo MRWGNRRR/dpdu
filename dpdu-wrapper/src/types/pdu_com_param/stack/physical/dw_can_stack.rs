@@ -1,3 +1,4 @@
+use crate::com_param_definition_set;
 use crate::types::pdu_com_param::single::bus_type::{
     CpBaudrate, CpBitSamplePoint, CpCanBaudrateRecord, CpCanFdBaudrate, CpCanFdBitSamplePoint,
     CpCanFdSyncJumpWidth, CpListenOnly, CpSamplesPerBit, CpSyncJumpWidth, CpTerminationType,
@@ -9,7 +10,6 @@ use crate::types::pdu_com_param::table::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::{com_param_definition_set, com_param_set};
 
 /// DW can stack (ISO 11898-2).
 #[derive(Clone, Debug, Serialize, Deserialize)]
