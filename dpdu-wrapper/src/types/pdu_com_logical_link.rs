@@ -354,6 +354,11 @@ impl PduLogicalLink {
         self.create_primitive(PrimitiveType::RestoreParam, None)
     }
 
+    pub fn create_delay_primitive(&self, builder: Delay) -> Arc<PduPrimitive> {
+        let delay_ms = builder.delay.as_millis();
+        self.create_primitive(PrimitiveType::Delay { time: delay_ms as _ }, None)
+    }
+
     pub fn blocking_set_com_params(&self, set_target: impl Into<SetTarget>) -> GeneralResult<()> {
         let h_mod = self.get_module_handle();
         let h_cll = self.get_cll_handle();
@@ -1202,6 +1207,29 @@ impl CopParamsBuilder for SendRecv {
         params.expected_responses = self.filters.clone();
         params.time = self.delay.as_millis() as _;
 
+        params
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Delay {
+    pub delay: Duration
+}
+
+impl Delay {
+    pub fn new(delay_ms: u64) -> Self {
+        Self {
+            delay: Duration::from_millis(delay_ms)
+        }
+    }
+}
+
+impl sealed::Sealed for Delay {}
+
+impl CopParamsBuilder for Delay {
+    fn build(&self) -> PrimitiveParams {
+        let mut params = PrimitiveParams::default();
+        params.time = self.delay.as_millis() as _;
         params
     }
 }
